@@ -1,4 +1,4 @@
-use crate::errors::{BadRequestType, HubError};
+use super::errors::*;
 
 const FARCASTER_EPOCH: u64 = 1609459200000; // January 1, 2021 UTC
 

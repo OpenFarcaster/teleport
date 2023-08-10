@@ -1,7 +1,4 @@
-mod crypto;
-mod errors;
-mod time;
-mod username_proof;
+mod core;
 
 fn main() {
     println!("Hello, world!");

@@ -9,8 +9,10 @@ edition = "2021"
 blake3 = "1.4.1"
 ed25519-dalek = "1.0.1"
 ethers = "2.0.8"
+libp2p = { version = "0.52.1", features = ["gossipsub"] }
 prost = "0.11.9"
 serde = "1.0.183"
+sled = "0.34.7"
 thiserror = "1.0.44"
 
 [build-dependencies]
