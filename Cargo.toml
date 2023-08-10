@@ -6,8 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+blake3 = "1.4.1"
 ed25519-dalek = "1.0.1"
+ethers = "2.0.8"
 prost = "0.11.9"
+serde = "1.0.183"
+thiserror = "1.0.44"
 
 [build-dependencies]
 prost-build = "0.11.9"

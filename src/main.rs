@@ -1,7 +1,8 @@
 mod crypto;
-pub use crypto::ed25519;
+mod errors;
+mod time;
+mod username_proof;
 
 fn main() {
     println!("Hello, world!");
-    ed25519::hello();
 }
