@@ -2,15 +2,11 @@ use std::str::FromStr;
 
 use libp2p::{
     core::upgrade,
-    gossipsub::Message as GossipSubMessage,
-    gossipsub::{self, Topic},
     gossipsub::{MessageAuthenticity, MessageId},
-    identity, noise,
-    swarm::{SwarmBuilder, SwarmEvent},
-    tcp, Multiaddr, PeerId, Swarm, Transport,
+    swarm::SwarmBuilder,
+    Multiaddr, PeerId, Swarm, Transport,
 };
 use prost::Message;
-use tokio::{runtime::Runtime, select};
 
 use crate::{
     core::{
@@ -92,6 +88,11 @@ impl GossipNode {
             gossipsub::Behaviour::new(message_authenticity, gossipsub_config)
                 .expect("Valid config");
 
+        let identify: identify::Behaviour = identify::Behaviour::new(identify::Config::new(
+            "farcaster/teleport".to_owned(),
+            local_key.public(),
+        ));
+
         let mut allowed_peers: libp2p::allow_block_list::Behaviour<
             libp2p::allow_block_list::AllowedPeers,
         > = libp2p::allow_block_list::Behaviour::default();
@@ -120,6 +121,7 @@ impl GossipNode {
 
         let behaviour = GossipBehaviour {
             gossipsub,
+            identify,
             allowed_peers,
             blocked_peers,
         };

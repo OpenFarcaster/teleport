@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use libp2p::bytes::Bytes;
 use libp2p::futures::{Future, FutureExt};
 use libp2p::gossipsub::Event as GossipsubEvent;
 use libp2p::swarm::SwarmEvent;
@@ -12,6 +13,16 @@ use crate::core::errors::HubError;
 
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 use super::handle_swarm_event::SwarmEventHandler;
+
+use prost::Message;
+
+#[derive(Message)]
+pub struct Peer {
+    #[prost(bytes, tag = "1")]
+    pub public_key: Vec<u8>,
+    #[prost(bytes, repeated, tag = "2")]
+    pub addrs: Vec<Vec<u8>>,
+}
 
 pub struct PubSubPeerDiscovery {
     interval: Duration,
@@ -136,7 +147,7 @@ impl SwarmEventHandler for PubSubPeerDiscovery {
                                 return;
                             }
 
-                            let locked_swarm = self.swarm.lock().await;
+                            let mut locked_swarm = self.swarm.lock().await;
                             let local_peer_id = locked_swarm.local_peer_id();
 
                             if local_peer_id == propagation_source {
@@ -148,7 +159,13 @@ impl SwarmEventHandler for PubSubPeerDiscovery {
                                 propagation_source, message
                             );
 
-                            todo!("dial peer")
+                            let decoded_peer =
+                                Peer::decode(Bytes::from(message.data.clone())).unwrap();
+
+                            for addr in decoded_peer.addrs {
+                                let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
+                                locked_swarm.dial(multi_addr).unwrap();
+                            }
                         }
                     }
                     _ => {}
@@ -160,14 +177,25 @@ impl SwarmEventHandler for PubSubPeerDiscovery {
 }
 
 pub async fn broadcast(swarm: Arc<Mutex<Swarm<GossipBehaviour>>>, topic: &IdentTopic) {
-    // TODO: This is likely wrong - js-libp2p encodes using protobuf over
-    // public key and multiaddresses
-    let encoded_peer_id = swarm.lock().await.local_peer_id().to_bytes();
+    let locked_swarm = swarm.lock().await;
+
+    let peer_id_bytes = locked_swarm.local_peer_id().to_bytes();
+    let listener_addresses_bytes: Vec<Vec<u8>> =
+        locked_swarm.listeners().map(|la| la.to_vec()).collect();
+
+    // Encode peer_id and listener_addresses the same way as JS
+    let peer = Peer {
+        public_key: peer_id_bytes.clone(), // TODO: this is likely wrong. JS does this over public key, not peer id
+        addrs: listener_addresses_bytes,
+    };
+
+    let mut encoded_peer = Vec::new();
+    peer.encode(&mut encoded_peer).unwrap();
 
     let _ = swarm
         .lock()
         .await
         .behaviour_mut()
         .gossipsub
-        .publish(topic.clone(), encoded_peer_id);
+        .publish(topic.clone(), encoded_peer);
 }
