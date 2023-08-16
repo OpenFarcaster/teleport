@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use libp2p::{
     core::upgrade,
-    gossipsub::{MessageAuthenticity, MessageId},
+    gossipsub::{self, Message as GossipSubMessage, MessageAuthenticity, MessageId},
+    identify, identity, noise,
     swarm::SwarmBuilder,
     Multiaddr, PeerId, Swarm, Transport,
 };
