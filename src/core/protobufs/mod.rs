@@ -1,3 +1,3 @@
 pub mod generated {
-    include!(concat!(env!("OUT_DIR"), "/generated/_.rs"));
+    tonic::include_proto!("_");
 }

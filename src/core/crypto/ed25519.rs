@@ -1,37 +1,29 @@
-use ed25519_dalek::{
-    Digest, Keypair, PublicKey, Sha512, Signature, SignatureError, PUBLIC_KEY_LENGTH,
-    SECRET_KEY_LENGTH,
-};
+// use ed25519_dalek::{
+//     Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey, PUBLIC_KEY_LENGTH,
+//     SECRET_KEY_LENGTH,
+// };
 
-pub fn get_public_key(private_key: &[u8; SECRET_KEY_LENGTH]) -> [u8; 32] {
-    let keypair =
-        Keypair::from_bytes(private_key).expect("Failed to create a keypair from private key");
+// pub fn get_public_key(private_key: &[u8; SECRET_KEY_LENGTH]) -> [u8; PUBLIC_KEY_LENGTH] {
+//     let signing_key = SigningKey::from_bytes(private_key);
+//     let verifying_key = signing_key.verifying_key();
 
-    let public_key: PublicKey = keypair.public;
+//     verifying_key.to_bytes()
+// }
 
-    public_key.to_bytes()
-}
+// pub fn sign_message_hash(
+//     hash: &[u8],
+//     private_key: &[u8; SECRET_KEY_LENGTH],
+// ) -> Result<Signature, SignatureError> {
+//     let signing_key = SigningKey::from_bytes(private_key);
 
-pub fn sign_message(
-    message: &[u8],
-    private_key: &[u8; SECRET_KEY_LENGTH],
-) -> Result<Signature, SignatureError> {
-    let keypair =
-        Keypair::from_bytes(private_key).expect("Failed to create a keypair from private key");
+//     Ok(signing_key.sign(hash))
+// }
 
-    let mut prehashed: Sha512 = Sha512::new();
-    prehashed.update(message);
-
-    keypair.sign_prehashed(prehashed, None)
-}
-
-pub fn verify_message_hash_signature(
-    signature: &Signature,
-    hash: Sha512,
-    public_key_bytes: &[u8; PUBLIC_KEY_LENGTH],
-) -> Result<(), SignatureError> {
-    let public_key: PublicKey =
-        PublicKey::from_bytes(public_key_bytes).expect("Invalid public_key_bytes");
-
-    public_key.verify_prehashed(hash, None, signature)
-}
+// pub fn verify_message_hash_signature(
+//     signature: &Signature,
+//     hash: &[u8],
+//     public_key_bytes: &[u8; PUBLIC_KEY_LENGTH],
+// ) -> Result<(), SignatureError> {
+//     let verifying_key = VerifyingKey::from_bytes(public_key_bytes).expect("Invalid public key");
+//     verifying_key.verify(hash, signature)
+// }
