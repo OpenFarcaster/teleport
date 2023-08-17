@@ -29,13 +29,11 @@ use crate::{
 
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 
-const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/0.0.0.0";
+const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
 
-type GossipNodeSwarmEvent = SwarmEvent<
-    GossipBehaviourEvent,
-    Either<Either<Either<Either<Void, std::io::Error>, Void>, Void>, Void>,
->;
+type GossipNodeSwarmEvent =
+    SwarmEvent<GossipBehaviourEvent, Either<Either<Either<Void, std::io::Error>, Void>, Void>>;
 
 #[derive(Message)]
 pub struct Peer {
@@ -142,7 +140,7 @@ impl GossipNode {
                 error,
             } => println!(
                 "Outgoing connection error: {:?}",
-                (connection_id, peer_id, error.to_string())
+                (connection_id, peer_id, error)
             ),
             SwarmEvent::NewListenAddr {
                 listener_id,
@@ -434,10 +432,6 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
 
     let ping: ping::Behaviour = ping::Behaviour::new(ping::Config::new());
 
-    let mut allowed_peers: libp2p::allow_block_list::Behaviour<
-        libp2p::allow_block_list::AllowedPeers,
-    > = libp2p::allow_block_list::Behaviour::default();
-
     let mut blocked_peers: libp2p::allow_block_list::Behaviour<
         libp2p::allow_block_list::BlockedPeers,
     > = libp2p::allow_block_list::Behaviour::default();
@@ -445,12 +439,6 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
     if options.direct_peers.is_some() {
         for peer in options.direct_peers.unwrap() {
             gossipsub.add_explicit_peer(&peer.id);
-        }
-    }
-
-    if let Some(allowed_peer_ids) = options.allowed_peer_ids {
-        for peer_id in allowed_peer_ids {
-            allowed_peers.allow_peer(peer_id)
         }
     }
 
@@ -464,7 +452,6 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
         gossipsub,
         identify,
         ping,
-        allowed_peers,
         blocked_peers,
     };
 

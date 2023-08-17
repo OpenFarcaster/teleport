@@ -1,4 +1,4 @@
-use libp2p::allow_block_list::{self, AllowedPeers, BlockedPeers};
+use libp2p::allow_block_list::{self, BlockedPeers};
 use libp2p::gossipsub;
 use libp2p::identify;
 use libp2p::ping;
@@ -11,7 +11,6 @@ pub struct GossipBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
-    pub allowed_peers: allow_block_list::Behaviour<AllowedPeers>,
     pub blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
 }
 
@@ -20,7 +19,7 @@ pub enum GossipBehaviourEvent {
     Gossipsub(gossipsub::Event),
     Identify(identify::Event),
     Ping(ping::Event),
-    AllowedOrBlockedPeers,
+    BlockedPeer,
 }
 
 impl From<gossipsub::Event> for GossipBehaviourEvent {
@@ -43,6 +42,6 @@ impl From<ping::Event> for GossipBehaviourEvent {
 
 impl From<Void> for GossipBehaviourEvent {
     fn from(_: Void) -> Self {
-        GossipBehaviourEvent::AllowedOrBlockedPeers
+        GossipBehaviourEvent::BlockedPeer
     }
 }
