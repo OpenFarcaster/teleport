@@ -29,7 +29,7 @@ use crate::{
 
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 
-const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
+const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/0.0.0.0";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
 
 type GossipNodeSwarmEvent = SwarmEvent<
@@ -318,8 +318,12 @@ impl GossipNode {
         format!("f_network_{}_peer_discovery", self.network.as_str_name())
     }
 
-    fn gossip_topics(&self) -> [String; 2] {
-        [self.primary_topic(), self.contact_info_topic()]
+    fn gossip_topics(&self) -> [String; 3] {
+        [
+            self.primary_topic(),
+            self.contact_info_topic(),
+            self.peer_discovery_topic(),
+        ]
     }
 
     async fn all_peer_ids(&self) -> Vec<PeerId> {
@@ -408,7 +412,7 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
         tcp_listener.local_addr().unwrap().port()
     });
     let listen_multi_addr_str = format!("{}/tcp/{}", listen_ip_multi_addr, listen_port);
-    println!("listen_multi_addr_str: {}", listen_multi_addr_str);
+    println!("listen_multi_addr_str: {}", listen_multi_addr_str,);
     let listen_multi_addr = Multiaddr::from_str(&listen_multi_addr_str).unwrap();
 
     let primary_topic = format!("f_network_{}_primary", options.network.as_str_name());
