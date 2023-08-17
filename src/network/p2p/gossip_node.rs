@@ -1,3 +1,4 @@
+use libp2p::bytes::Bytes;
 use std::{net::TcpListener, str::FromStr, time::Duration};
 
 use libp2p::{
@@ -6,7 +7,9 @@ use libp2p::{
         channel::{mpsc, oneshot},
         prelude::*,
     },
-    gossipsub::{self, IdentTopic, Message as GossipSubMessage, MessageAuthenticity, MessageId},
+    gossipsub::{
+        self, Event, IdentTopic, Message as GossipSubMessage, MessageAuthenticity, MessageId,
+    },
     identify, identity, noise, ping,
     swarm::{derive_prelude::Either, SwarmBuilder, SwarmEvent},
     Multiaddr, PeerId, Swarm, Transport,
@@ -100,74 +103,17 @@ impl GossipNode {
         )
     }
 
-    async fn handle_event(&mut self, event: GossipNodeSwarmEvent) {
-        match event {
-            SwarmEvent::Behaviour(behaviour_event) => {
-                println!("Behaviour event: {:?}", behaviour_event)
-            }
-            SwarmEvent::ConnectionEstablished {
-                peer_id,
-                connection_id,
-                endpoint,
-                num_established,
-                concurrent_dial_errors,
-                established_in,
-            } => println!("Connection established: {:?}", (peer_id, connection_id)),
-            SwarmEvent::ConnectionClosed {
-                peer_id,
-                connection_id,
-                endpoint,
-                num_established,
-                cause,
-            } => println!("Connection closed: {:?}", (peer_id, connection_id)),
-            SwarmEvent::IncomingConnection {
-                connection_id,
-                local_addr,
-                send_back_addr,
-            } => println!("Incoming connection: {:?}", (connection_id, local_addr)),
-            SwarmEvent::IncomingConnectionError {
-                connection_id,
-                local_addr,
-                send_back_addr,
-                error,
-            } => println!(
-                "Incoming connection error: {:?}",
-                (connection_id, local_addr, error.to_string())
-            ),
-            SwarmEvent::OutgoingConnectionError {
-                connection_id,
-                peer_id,
-                error,
-            } => println!(
-                "Outgoing connection error: {:?}",
-                (connection_id, peer_id, error)
-            ),
-            SwarmEvent::NewListenAddr {
-                listener_id,
-                address,
-            } => println!("New listen addr: {:?}", (listener_id, address)),
-            SwarmEvent::ExpiredListenAddr {
-                listener_id,
-                address,
-            } => println!("Expired listen addr: {:?}", (listener_id, address)),
-            SwarmEvent::ListenerClosed {
-                listener_id,
-                addresses,
-                reason,
-            } => println!("Listener closed: {:?}", (listener_id, addresses, reason)),
-            SwarmEvent::ListenerError { listener_id, error } => {
-                println!("Listener error: {:?}", (listener_id, error))
-            }
-            SwarmEvent::Dialing {
-                peer_id,
-                connection_id,
-            } => println!("Dialing: {:?}", (peer_id, connection_id)),
-        }
-    }
-
     pub async fn start(&mut self, bootstrap_addrs: Vec<Multiaddr>) -> Result<(), HubError> {
         let _ = self.bootstrap(bootstrap_addrs).await;
         let mut interval = time::interval(Duration::from_secs(10));
+
+        let peer_discovery_topic = IdentTopic::new(self.peer_discovery_topic());
+
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&peer_discovery_topic);
 
         loop {
             tokio::select! {
@@ -185,29 +131,6 @@ impl GossipNode {
                 }
             }
         }
-    }
-
-    async fn peer_discovery_broadcast(&mut self) {
-        let peer_id_bytes = self.swarm.local_peer_id().to_bytes();
-        let listener_addresses_bytes: Vec<Vec<u8>> =
-            self.swarm.listeners().map(|la| la.to_vec()).collect();
-
-        // Encode peer_id and listener_addresses the same way as JS
-        let peer = Peer {
-            public_key: peer_id_bytes.clone(), // TODO: this is likely wrong. JS does this over public key, not peer id
-            addrs: listener_addresses_bytes,
-        };
-
-        let mut encoded_peer = Vec::new();
-        peer.encode(&mut encoded_peer).unwrap();
-
-        let topic = IdentTopic::new(self.peer_discovery_topic());
-
-        let _ = self
-            .swarm
-            .behaviour_mut()
-            .gossipsub
-            .publish(topic, encoded_peer);
     }
 
     pub async fn gossip_message(&mut self, message: generated::Message) -> Result<(), HubError> {
@@ -284,6 +207,130 @@ impl GossipNode {
         Ok(())
     }
 
+    async fn handle_event(&mut self, event: GossipNodeSwarmEvent) {
+        match event {
+            SwarmEvent::Behaviour(behaviour_event) => {
+                self.handle_peer_discovery_pubsub_event(&behaviour_event)
+                    .await;
+            }
+            SwarmEvent::ConnectionEstablished {
+                peer_id,
+                connection_id,
+                endpoint,
+                num_established,
+                concurrent_dial_errors,
+                established_in,
+            } => println!("Connection established: {:?}", (peer_id, connection_id)),
+            SwarmEvent::ConnectionClosed {
+                peer_id,
+                connection_id,
+                endpoint,
+                num_established,
+                cause,
+            } => println!("Connection closed: {:?}", (peer_id, connection_id)),
+            SwarmEvent::IncomingConnection {
+                connection_id,
+                local_addr,
+                send_back_addr,
+            } => println!("Incoming connection: {:?}", (connection_id, local_addr)),
+            SwarmEvent::IncomingConnectionError {
+                connection_id,
+                local_addr,
+                send_back_addr,
+                error,
+            } => println!(
+                "Incoming connection error: {:?}",
+                (connection_id, local_addr, error.to_string())
+            ),
+            SwarmEvent::OutgoingConnectionError {
+                connection_id,
+                peer_id,
+                error,
+            } => println!(
+                "Outgoing connection error: {:?}",
+                (connection_id, peer_id, error)
+            ),
+            SwarmEvent::NewListenAddr {
+                listener_id,
+                address,
+            } => println!("New listen addr: {:?}", (listener_id, address)),
+            SwarmEvent::ExpiredListenAddr {
+                listener_id,
+                address,
+            } => println!("Expired listen addr: {:?}", (listener_id, address)),
+            SwarmEvent::ListenerClosed {
+                listener_id,
+                addresses,
+                reason,
+            } => println!("Listener closed: {:?}", (listener_id, addresses, reason)),
+            SwarmEvent::ListenerError { listener_id, error } => {
+                println!("Listener error: {:?}", (listener_id, error))
+            }
+            SwarmEvent::Dialing {
+                peer_id,
+                connection_id,
+            } => println!("Dialing: {:?}", (peer_id, connection_id)),
+        }
+    }
+
+    async fn handle_peer_discovery_pubsub_event(&mut self, event: &GossipBehaviourEvent) {
+        match event {
+            GossipBehaviourEvent::Gossipsub(event) => {
+                if let Event::Message {
+                    propagation_source,
+                    message_id,
+                    message,
+                } = event
+                {
+                    if self.peer_discovery_topic() != message.topic.to_string() {
+                        return;
+                    }
+
+                    let local_peer_id = self.swarm.local_peer_id();
+                    if local_peer_id == propagation_source {
+                        return;
+                    }
+
+                    let connected_peers = self.all_peer_ids();
+                    if connected_peers.contains(&propagation_source) {
+                        return;
+                    }
+
+                    let decoded_peer = Peer::decode(Bytes::from(message.data.clone())).unwrap();
+
+                    for addr in decoded_peer.addrs {
+                        let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
+                        self.dial_multi_addr(multi_addr).await.unwrap();
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    async fn peer_discovery_broadcast(&mut self) {
+        let peer_id_bytes = self.swarm.local_peer_id().to_bytes();
+        let listener_addresses_bytes: Vec<Vec<u8>> =
+            self.swarm.listeners().map(|la| la.to_vec()).collect();
+
+        // Encode peer_id and listener_addresses the same way as JS
+        let peer = Peer {
+            public_key: peer_id_bytes.clone(), // TODO: this is likely wrong. JS does this over public key, not peer id
+            addrs: listener_addresses_bytes,
+        };
+
+        let mut encoded_peer = Vec::new();
+        peer.encode(&mut encoded_peer).unwrap();
+
+        let topic = IdentTopic::new(self.peer_discovery_topic());
+
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic, encoded_peer);
+    }
+
     async fn dial_multi_addr(&mut self, multi_addr: Multiaddr) -> Result<(), HubError> {
         let res = self.swarm.dial(multi_addr);
 
@@ -324,7 +371,7 @@ impl GossipNode {
         ]
     }
 
-    async fn all_peer_ids(&self) -> Vec<PeerId> {
+    fn all_peer_ids(&self) -> Vec<PeerId> {
         self.swarm
             .behaviour()
             .gossipsub
