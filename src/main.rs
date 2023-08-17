@@ -6,6 +6,7 @@ use network::p2p::gossip_node::NodeOptions;
 mod core;
 mod network;
 mod rpc;
+mod storage;
 mod teleport;
 
 #[tokio::main]

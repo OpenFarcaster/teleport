@@ -27,6 +27,7 @@ libp2p-mplex = "0.40.0"
 env_logger = "0.10.0"
 tokio = { version = "1.32.0", features = ["full"] }
 void = "1.0.2"
+rocksdb = "0.21.0"
 
 [build-dependencies]
 prost-build = "0.11.9"
