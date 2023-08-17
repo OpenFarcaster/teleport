@@ -1,4 +1,4 @@
-use libp2p::bytes::Bytes;
+use libp2p::{bytes::Bytes, relay, swarm::StreamUpgradeError};
 use std::{net::TcpListener, str::FromStr, time::Duration};
 
 use libp2p::{
@@ -35,8 +35,30 @@ use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
 
-type GossipNodeSwarmEvent =
-    SwarmEvent<GossipBehaviourEvent, Either<Either<Either<Void, std::io::Error>, Void>, Void>>;
+type GossipNodeSwarmEvent = SwarmEvent<
+    GossipBehaviourEvent,
+    Either<
+        Either<
+            Either<
+                Either<
+                    Void,
+                    Either<
+                        StreamUpgradeError<
+                            Either<
+                                relay::inbound::hop::FatalUpgradeError,
+                                relay::outbound::stop::FatalUpgradeError,
+                            >,
+                        >,
+                        Void,
+                    >,
+                >,
+                std::io::Error,
+            >,
+            Void,
+        >,
+        Void,
+    >,
+>;
 
 #[derive(Message)]
 pub struct Peer {
@@ -470,10 +492,7 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
     let gossipsub_config = libp2p::gossipsub::ConfigBuilder::default()
         .validation_mode(libp2p::gossipsub::ValidationMode::Strict)
         .message_id_fn(move |message: &GossipSubMessage| get_message_id(&primary_topic, message))
-        .mesh_n(1)
-        .mesh_n_low(1)
-        .mesh_n_high(3)
-        .mesh_outbound_min(0)
+        .support_floodsub()
         .build()
         .expect("Valid config");
 
@@ -484,6 +503,9 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
         "farcaster/teleport".to_owned(),
         local_key.public(),
     ));
+
+    let relay: relay::Behaviour =
+        relay::Behaviour::new(local_peer_id.clone(), relay::Config::default());
 
     let ping: ping::Behaviour = ping::Behaviour::new(ping::Config::new());
 
@@ -506,6 +528,7 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
     let behaviour = GossipBehaviour {
         gossipsub,
         identify,
+        relay,
         ping,
         blocked_peers,
     };

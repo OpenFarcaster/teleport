@@ -8,16 +8,7 @@ edition = "2021"
 [dependencies]
 blake3 = { version = "1.4.1", features = ["digest", "traits-preview"] }
 ethers = "2.0.8"
-libp2p = { version = "0.52.0", features = [
-    "gossipsub",
-    "macros",
-    "tcp",
-    "tokio",
-    "noise",
-    "ed25519",
-    "identify",
-    "ping",
-] }
+libp2p = { version = "0.52.0", features = ["gossipsub", "macros", "tcp", "tokio", "noise", "ed25519", "identify", "ping", "relay"] }
 prost = "0.11.9"
 serde = "1.0.183"
 sled = "0.34.7"

@@ -2,6 +2,7 @@ use libp2p::allow_block_list::{self, BlockedPeers};
 use libp2p::gossipsub;
 use libp2p::identify;
 use libp2p::ping;
+use libp2p::relay;
 use libp2p::swarm::NetworkBehaviour;
 use void::Void;
 
@@ -9,6 +10,7 @@ use void::Void;
 #[behaviour(to_swarm = "GossipBehaviourEvent")]
 pub struct GossipBehaviour {
     pub gossipsub: gossipsub::Behaviour,
+    pub relay: relay::Behaviour,
     pub identify: identify::Behaviour,
     pub ping: ping::Behaviour,
     pub blocked_peers: allow_block_list::Behaviour<BlockedPeers>,
@@ -18,6 +20,7 @@ pub struct GossipBehaviour {
 pub enum GossipBehaviourEvent {
     Gossipsub(gossipsub::Event),
     Identify(identify::Event),
+    Relay(relay::Event),
     Ping(ping::Event),
     BlockedPeer,
 }
@@ -31,6 +34,12 @@ impl From<gossipsub::Event> for GossipBehaviourEvent {
 impl From<identify::Event> for GossipBehaviourEvent {
     fn from(event: identify::Event) -> Self {
         GossipBehaviourEvent::Identify(event)
+    }
+}
+
+impl From<relay::Event> for GossipBehaviourEvent {
+    fn from(event: relay::Event) -> Self {
+        GossipBehaviourEvent::Relay(event)
     }
 }
 
