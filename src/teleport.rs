@@ -64,6 +64,7 @@ struct TestUser {
     mnemonic: String,
 }
 
+#[derive(Clone)]
 pub struct AddrInfo {
     pub id: PeerId,
     pub addrs: Vec<Multiaddr>,

@@ -124,60 +124,60 @@ impl PubSubPeerDiscovery {
     }
 }
 
-impl SwarmEventHandler for PubSubPeerDiscovery {
-    fn handle<'a>(
-        &'a self,
-        event: &'a SwarmEvent<GossipBehaviourEvent, std::io::Error>,
-    ) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
-        async move {
-            if !self.is_started {
-                return;
-            }
+// impl SwarmEventHandler for PubSubPeerDiscovery {
+//     fn handle<'a>(
+//         &'a self,
+//         event: &'a SwarmEvent<GossipBehaviourEvent, std::io::Error>,
+//     ) -> Pin<Box<dyn Future<Output = ()> + 'a>> {
+//         async move {
+//             if !self.is_started {
+//                 return;
+//             }
 
-            if let SwarmEvent::Behaviour(event) = event {
-                match event {
-                    GossipBehaviourEvent::Gossipsub(event) => {
-                        if let GossipsubEvent::Message {
-                            propagation_source,
-                            message_id: _,
-                            message,
-                        } = event
-                        {
-                            if self.topic.to_string() != message.topic.to_string() {
-                                return;
-                            }
+//             if let SwarmEvent::Behaviour(event) = event {
+//                 match event {
+//                     GossipBehaviourEvent::Gossipsub(event) => {
+//                         if let GossipsubEvent::Message {
+//                             propagation_source,
+//                             message_id: _,
+//                             message,
+//                         } = event
+//                         {
+//                             if self.topic.to_string() != message.topic.to_string() {
+//                                 return;
+//                             }
 
-                            let mut locked_swarm = self.swarm.lock().await;
-                            let local_peer_id = locked_swarm.local_peer_id();
+//                             let mut locked_swarm = self.swarm.lock().await;
+//                             let local_peer_id = locked_swarm.local_peer_id();
 
-                            if local_peer_id == propagation_source {
-                                return;
-                            }
+//                             if local_peer_id == propagation_source {
+//                                 return;
+//                             }
 
-                            println!(
-                                "Received message from {:?}: {:?}",
-                                propagation_source, message
-                            );
+//                             println!(
+//                                 "Received message from {:?}: {:?}",
+//                                 propagation_source, message
+//                             );
 
-                            let decoded_peer =
-                                Peer::decode(Bytes::from(message.data.clone())).unwrap();
+//                             let decoded_peer =
+//                                 Peer::decode(Bytes::from(message.data.clone())).unwrap();
 
-                            for addr in decoded_peer.addrs {
-                                let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
-                                locked_swarm.dial(multi_addr).unwrap();
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        .boxed()
-    }
-}
+//                             for addr in decoded_peer.addrs {
+//                                 let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
+//                                 locked_swarm.dial(multi_addr).unwrap();
+//                             }
+//                         }
+//                     }
+//                     _ => {}
+//                 }
+//             }
+//         }
+//         .boxed()
+//     }
+// }
 
 pub async fn broadcast(swarm: Arc<Mutex<Swarm<GossipBehaviour>>>, topic: &IdentTopic) {
-    let locked_swarm = swarm.lock().await;
+    let mut locked_swarm = swarm.lock().await;
 
     let peer_id_bytes = locked_swarm.local_peer_id().to_bytes();
     let listener_addresses_bytes: Vec<Vec<u8>> =
@@ -192,9 +192,7 @@ pub async fn broadcast(swarm: Arc<Mutex<Swarm<GossipBehaviour>>>, topic: &IdentT
     let mut encoded_peer = Vec::new();
     peer.encode(&mut encoded_peer).unwrap();
 
-    let _ = swarm
-        .lock()
-        .await
+    let _ = locked_swarm
         .behaviour_mut()
         .gossipsub
         .publish(topic.clone(), encoded_peer);
