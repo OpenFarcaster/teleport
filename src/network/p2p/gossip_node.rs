@@ -286,20 +286,24 @@ impl GossipNode {
                         return;
                     }
 
-                    let local_peer_id = self.swarm.local_peer_id();
-                    if local_peer_id == propagation_source {
-                        return;
-                    }
-
-                    let connected_peers = self.all_peer_ids();
-                    if connected_peers.contains(&propagation_source) {
-                        return;
-                    }
+                    let local_external_addrs: Vec<String> = self
+                        .swarm
+                        .external_addresses()
+                        .map(|a| a.to_string())
+                        .collect();
 
                     let decoded_peer = Peer::decode(Bytes::from(message.data.clone())).unwrap();
 
                     for addr in decoded_peer.addrs {
                         let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
+
+                        // Do not connect to self
+                        if local_external_addrs.contains(&multi_addr.to_string()) {
+                            continue;
+                        }
+
+                        // TODO: Do not connect to addresses we have already connected to
+
                         self.dial_multi_addr(multi_addr).await.unwrap();
                     }
                 }
@@ -466,6 +470,10 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
     let gossipsub_config = libp2p::gossipsub::ConfigBuilder::default()
         .validation_mode(libp2p::gossipsub::ValidationMode::Strict)
         .message_id_fn(move |message: &GossipSubMessage| get_message_id(&primary_topic, message))
+        .mesh_n(1)
+        .mesh_n_low(1)
+        .mesh_n_high(3)
+        .mesh_outbound_min(0)
         .build()
         .expect("Valid config");
 
