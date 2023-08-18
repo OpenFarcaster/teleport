@@ -108,12 +108,26 @@ impl GossipNode {
         let mut interval = time::interval(Duration::from_secs(10));
 
         let peer_discovery_topic = IdentTopic::new(self.peer_discovery_topic());
+        let primary_topic = IdentTopic::new(self.primary_topic());
+        let contact_info_topic = IdentTopic::new(self.contact_info_topic());
 
         let _ = self
             .swarm
             .behaviour_mut()
             .gossipsub
             .subscribe(&peer_discovery_topic);
+
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&primary_topic);
+
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&contact_info_topic);
 
         loop {
             tokio::select! {
@@ -212,6 +226,8 @@ impl GossipNode {
             SwarmEvent::Behaviour(behaviour_event) => {
                 self.handle_peer_discovery_pubsub_event(&behaviour_event)
                     .await;
+
+                println!("Behaviour event: {:?}", behaviour_event);
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id,
@@ -356,15 +372,18 @@ impl GossipNode {
     }
 
     fn primary_topic(&self) -> String {
-        format!("f_network_{}_primary", self.network.as_str_name())
+        let network_num: i32 = self.network as i32;
+        format!("f_network_{}_primary", network_num.to_string())
     }
 
     fn contact_info_topic(&self) -> String {
-        format!("f_network_{}_contact_info", self.network.as_str_name())
+        let network_num: i32 = self.network as i32;
+        format!("f_network_{}_contact_info", network_num.to_string())
     }
 
     fn peer_discovery_topic(&self) -> String {
-        format!("f_network_{}_peer_discovery", self.network.as_str_name())
+        let network_num: i32 = self.network as i32;
+        format!("f_network_{}_peer_discovery", network_num.to_string())
     }
 
     fn gossip_topics(&self) -> [String; 3] {

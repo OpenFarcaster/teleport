@@ -16,7 +16,7 @@ async fn main() {
     let dial_peer_addr = std::env::args().nth(1);
 
     let node_options = NodeOptions::new(
-        core::protobufs::generated::FarcasterNetwork::None,
+        core::protobufs::generated::FarcasterNetwork::Mainnet,
         None,
         None,
         None,
