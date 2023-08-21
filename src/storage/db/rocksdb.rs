@@ -1,4 +1,4 @@
-use rocksdb::DB;
+use rocksdb::{SingleThreaded, Transaction, TransactionDB};
 
 use crate::core::errors::HubError;
 
@@ -7,20 +7,18 @@ pub const MAX_DB_ITERATOR_OPEN_MS: u64 = 60 * 1000;
 
 const DB_NAME_DEFAULT: &str = "farcaster";
 
-struct RocksDB {
-    db: DB,
+pub struct RocksDB {
+    db: TransactionDB<SingleThreaded>,
+    name: String,
 }
 
 impl RocksDB {
     pub fn new(name: Option<String>) -> Self {
-        let path = format!(
-            "{}/{}",
-            DB_DIRECTORY,
-            name.unwrap_or(DB_NAME_DEFAULT.to_string())
-        );
+        let db_name = name.unwrap_or(DB_NAME_DEFAULT.to_string());
 
         RocksDB {
-            db: DB::open_default(path).unwrap(),
+            db: TransactionDB::open_default(get_db_path(&db_name)).unwrap(),
+            name: db_name,
         }
     }
 
@@ -69,6 +67,33 @@ impl RocksDB {
 
         Ok(())
     }
+
+    pub fn batch(&self) -> Result<Transaction<TransactionDB>, HubError> {
+        Ok(self.db.transaction())
+    }
+
+    pub fn commit(tx: Transaction<TransactionDB>) -> Result<(), HubError> {
+        let commit_res = tx.commit();
+
+        if let Err(e) = commit_res {
+            return Err(parse_db_error(e));
+        }
+
+        Ok(())
+    }
+
+    pub fn destroy(&self) -> Result<(), HubError> {
+        let res = TransactionDB::<SingleThreaded>::destroy(
+            &rocksdb::Options::default(),
+            get_db_path(&self.name),
+        );
+
+        if let Err(e) = res {
+            return Err(parse_db_error(e));
+        }
+
+        Ok(())
+    }
 }
 
 fn parse_db_error(e: rocksdb::Error) -> HubError {
@@ -80,4 +105,8 @@ fn parse_db_error(e: rocksdb::Error) -> HubError {
         crate::core::errors::UnavailableType::StorageFailure,
         e.to_string(),
     );
+}
+
+fn get_db_path(name: &str) -> String {
+    format!("{}/{}", DB_DIRECTORY, name)
 }
