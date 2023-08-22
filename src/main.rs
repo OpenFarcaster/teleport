@@ -3,6 +3,7 @@ use std::str::FromStr;
 use libp2p::Multiaddr;
 use network::p2p::gossip_node::NodeOptions;
 
+mod cli;
 mod core;
 mod network;
 mod rpc;
