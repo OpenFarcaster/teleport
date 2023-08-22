@@ -1,9 +1,13 @@
-use libp2p::{Multiaddr, PeerId};
-use tonic::transport::Channel;
+use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
+use tonic::transport::{Channel, Server};
 
-use crate::core::{
-    errors::HubError,
-    protobufs::generated::{hub_service_client::HubServiceClient, *},
+use crate::{
+    core::{
+        errors::HubError,
+        protobufs::generated::{hub_service_client::HubServiceClient, *},
+    },
+    network::p2p::gossip_node::{Command, GossipNode, NodeOptions},
+    storage::db::rocksdb::RocksDB,
 };
 
 enum HubSubmitSource {
@@ -70,12 +74,12 @@ pub struct AddrInfo {
     pub addrs: Vec<Multiaddr>,
 }
 
-struct HubOptions {
+pub struct HubOptions {
     network: FarcasterNetwork,
     peer_id: Option<PeerId>,
     bootstrap_addrs: Option<Vec<Multiaddr>>,
-    allowed_peers: Option<Vec<String>>,
-    denied_peers: Option<Vec<String>>,
+    allowed_peers: Option<Vec<PeerId>>,
+    denied_peers: Option<Vec<PeerId>>,
     ip_multi_addr: Option<String>,
     rpc_server_host: Option<String>,
     anounce_ip: Option<String>,
@@ -119,6 +123,38 @@ struct HubOptions {
     direct_peers: Option<Vec<AddrInfo>>,
 }
 
-struct Hub {
+pub struct Hub {
     options: HubOptions,
+    gossip_node: GossipNode,
+    command_sender: mpsc::Sender<Command>,
+    // TODO: rpc_server: Server,
+    // TODO: admin_server
+    rocks_db: RocksDB,
+    // TODO: Sync Engine
+    // TODO: Job Schedulers
+    // TODO: DB Engine
+    // TODO: Chain Events
+}
+
+impl Hub {
+    pub fn new(options: HubOptions) -> Self {
+        let gossip_node_opts = NodeOptions::new(
+            options.network,
+            None,
+            None,
+            None,
+            options.allowed_peers.clone(),
+            options.denied_peers.clone(),
+            options.direct_peers.clone(),
+        );
+        let (gossip_node, command_sender) = GossipNode::new(gossip_node_opts);
+        let rocks_db = RocksDB::new(options.db_name.clone());
+
+        Hub {
+            options,
+            gossip_node,
+            command_sender,
+            rocks_db,
+        }
+    }
 }
