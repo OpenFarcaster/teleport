@@ -15,8 +15,7 @@ use libp2p::{
     Multiaddr, PeerId, Swarm, Transport,
 };
 use prost::Message;
-use tokio::time;
-use void::Void;
+use tokio::{select, time};
 
 use crate::{
     core::{
@@ -33,13 +32,13 @@ use crate::{
     teleport::AddrInfo,
 };
 
-use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
+use super::{
+    event_loop::{Command, EventLoop},
+    gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent},
+};
 
 const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
-
-type GossipNodeSwarmEvent =
-    SwarmEvent<GossipBehaviourEvent, Either<Either<Either<Void, std::io::Error>, Void>, Void>>;
 
 #[derive(Message)]
 pub struct Peer {
@@ -58,10 +57,6 @@ pub struct NodeOptions {
     allowed_peer_ids: Option<Vec<PeerId>>,
     denied_peer_ids: Option<Vec<PeerId>>,
     direct_peers: Option<Vec<AddrInfo>>,
-}
-
-pub enum Command {
-    GossipMessage(protobufs::generated::Message),
 }
 
 impl NodeOptions {
@@ -88,125 +83,61 @@ impl NodeOptions {
 
 pub(crate) struct GossipNode {
     network: FarcasterNetwork,
-    swarm: Swarm<GossipBehaviour>,
-    command_receiver: mpsc::Receiver<Command>,
+    command_sender: mpsc::Sender<Command>,
+    listen_multi_addr: Multiaddr,
+    local_peer_id: PeerId,
 }
 
 impl GossipNode {
-    pub fn new(options: NodeOptions) -> (Self, mpsc::Sender<Command>) {
-        let swarm = create_node(options.clone()).expect("Failed to create node");
+    pub fn new(options: NodeOptions) -> Self {
+        let (swarm, listen_multi_addr, peer_id) =
+            create_node(options.clone()).expect("Failed to create node");
+        let (command_sender, command_receiver) = mpsc::channel(0);
 
-        let (command_sender, command_receiver) = mpsc::channel(1);
+        let event_loop = EventLoop::new(swarm, command_receiver);
 
-        (
-            GossipNode {
-                network: options.network,
-                swarm,
-                command_receiver,
-            },
+        GossipNode {
+            network: options.network,
             command_sender,
-        )
+            listen_multi_addr,
+            local_peer_id: peer_id,
+        }
     }
 
     pub async fn start(&mut self, bootstrap_addrs: Vec<Multiaddr>) -> Result<(), HubError> {
         let _ = self.bootstrap(bootstrap_addrs).await;
         let mut interval = time::interval(Duration::from_secs(10));
 
-        println!("Peer ID is: {}", self.swarm.local_peer_id());
+        println!("Peer ID is: {}", self.local_peer_id);
 
         let peer_discovery_topic = IdentTopic::new(self.peer_discovery_topic());
         let primary_topic = IdentTopic::new(self.primary_topic());
         let contact_info_topic = IdentTopic::new(self.contact_info_topic());
 
-        let _ = self
-            .swarm
-            .behaviour_mut()
-            .gossipsub
-            .subscribe(&peer_discovery_topic);
+        self.command_sender
+            .send(Command::SubscribeTopic {
+                topic: peer_discovery_topic,
+            })
+            .await
+            .expect("Failed to subscribe to topic");
 
-        let _ = self
-            .swarm
-            .behaviour_mut()
-            .gossipsub
-            .subscribe(&primary_topic);
+        self.command_sender
+            .send(Command::SubscribeTopic {
+                topic: primary_topic,
+            })
+            .await
+            .expect("Failed to subscribe to topic");
 
-        let _ = self
-            .swarm
-            .behaviour_mut()
-            .gossipsub
-            .subscribe(&contact_info_topic);
+        self.command_sender
+            .send(Command::SubscribeTopic {
+                topic: contact_info_topic,
+            })
+            .await
+            .expect("Failed to subscribe to topic");
 
-        loop {
-            tokio::select! {
-                _ = interval.tick() => {
-                    self.peer_discovery_broadcast().await
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    break Ok(());
-                }
-                event = self.swarm.next() => self.handle_event(event.expect("fgsd")).await,
-                command = self.command_receiver.next() => match command {
-                    Some(Command::GossipMessage(message)) => {
-                        self.gossip_message(message).await.unwrap();
-                    }
-                    None => {
-                    },
-                }
-            }
-        }
-    }
-
-    pub async fn gossip_message(&mut self, message: generated::Message) -> Result<(), HubError> {
-        let gossip_message = GossipMessage {
-            topics: vec![self.primary_topic()],
-            peer_id: self.swarm.local_peer_id().to_bytes(),
-            version: GossipVersion::V11 as i32,
-            content: Some(Content::Message(message)),
-        };
-
-        self.publish(gossip_message).await
-    }
-
-    pub async fn gossip_contact_info(
-        &mut self,
-        contact_info: ContactInfoContent,
-    ) -> Result<(), HubError> {
-        let gossip_message = GossipMessage {
-            topics: vec![self.contact_info_topic()],
-            peer_id: self.swarm.local_peer_id().to_bytes(),
-            version: GossipVersion::V11.into(),
-            content: Some(Content::ContactInfoContent(contact_info)),
-        };
-
-        self.publish(gossip_message).await
-    }
-
-    pub async fn publish(&mut self, message: GossipMessage) -> Result<(), HubError> {
-        let mut encoded_message = Vec::new();
-        let encode_result = message.encode(&mut encoded_message);
-
-        if let Err(err) = encode_result {
-            return Err(HubError::BadRequest(
-                BadRequestType::Generic,
-                err.to_string(),
-            ));
-        }
-
-        for topic_str in message.topics {
-            let topic = IdentTopic::new(topic_str);
-            let publish_result = self
-                .swarm
-                .behaviour_mut()
-                .gossipsub
-                .publish(topic, encoded_message.clone());
-
-            if let Err(err) = publish_result {
-                return Err(HubError::BadRequest(
-                    BadRequestType::Duplicate,
-                    err.to_string(),
-                ));
-            }
-        }
+        self.command_sender.send(Command::StartListening {
+            addr: self.listen_multi_addr.clone(),
+        });
 
         Ok(())
     }
@@ -228,106 +159,6 @@ impl GossipNode {
         }
 
         Ok(())
-    }
-
-    async fn handle_event(&mut self, event: GossipNodeSwarmEvent) {
-        match event {
-            SwarmEvent::Behaviour(behaviour_event) => {
-                self.handle_peer_discovery_pubsub_event(&behaviour_event)
-                    .await;
-
-                match behaviour_event {
-                    GossipBehaviourEvent::Gossipsub(gossipsub_event) => match gossipsub_event {
-                        Event::Message {
-                            propagation_source,
-                            message_id,
-                            message,
-                        } => {
-                            let raw_data = message.data;
-                            let decoded_message = GossipMessage::decode(raw_data.as_ref()).unwrap();
-
-                            match decoded_message.content {
-                                Some(Content::Message(data)) => {
-                                    // println!("Message: {:?}", data);
-                                }
-                                _ => {
-                                    println!("Unknown message");
-                                }
-                            }
-                        }
-                        Event::Subscribed { peer_id, topic } => {
-                            println!("Subscribed: {:?}", (peer_id, topic))
-                        }
-                        Event::Unsubscribed { peer_id, topic } => {
-                            println!("Unsubscribed: {:?}", (peer_id, topic))
-                        }
-                        Event::GossipsubNotSupported { peer_id } => {
-                            println!("GossipsubNotSupported: {:?}", (peer_id))
-                        }
-                    },
-                    GossipBehaviourEvent::Identify(_) => println!("Identify"),
-                    GossipBehaviourEvent::Ping(_) => println!("Ping"),
-                    GossipBehaviourEvent::BlockedPeer => println!("BlockedPeer"),
-                }
-            }
-            SwarmEvent::ConnectionEstablished {
-                peer_id,
-                connection_id,
-                endpoint,
-                num_established,
-                concurrent_dial_errors,
-                established_in,
-            } => println!("Connection established: {:?}", (peer_id, connection_id)),
-            SwarmEvent::ConnectionClosed {
-                peer_id,
-                connection_id,
-                endpoint,
-                num_established,
-                cause,
-            } => println!("Connection closed: {:?}", (peer_id, connection_id)),
-            SwarmEvent::IncomingConnection {
-                connection_id,
-                local_addr,
-                send_back_addr,
-            } => println!("Incoming connection: {:?}", (connection_id, local_addr)),
-            SwarmEvent::IncomingConnectionError {
-                connection_id,
-                local_addr,
-                send_back_addr,
-                error,
-            } => println!(
-                "Incoming connection error: {:?}",
-                (connection_id, local_addr, error.to_string())
-            ),
-            SwarmEvent::OutgoingConnectionError {
-                connection_id,
-                peer_id,
-                error,
-            } => println!(
-                "Outgoing connection error: {:?}",
-                (connection_id, peer_id, error)
-            ),
-            SwarmEvent::NewListenAddr {
-                listener_id,
-                address,
-            } => println!("New listen addr: {:?}", (listener_id, address)),
-            SwarmEvent::ExpiredListenAddr {
-                listener_id,
-                address,
-            } => println!("Expired listen addr: {:?}", (listener_id, address)),
-            SwarmEvent::ListenerClosed {
-                listener_id,
-                addresses,
-                reason,
-            } => println!("Listener closed: {:?}", (listener_id, addresses, reason)),
-            SwarmEvent::ListenerError { listener_id, error } => {
-                println!("Listener error: {:?}", (listener_id, error))
-            }
-            SwarmEvent::Dialing {
-                peer_id,
-                connection_id,
-            } => println!("Dialing: {:?}", (peer_id, connection_id)),
-        }
     }
 
     async fn handle_peer_discovery_pubsub_event(&mut self, event: &GossipBehaviourEvent) {
@@ -507,7 +338,9 @@ pub fn default_message_id_fn(message: &GossipSubMessage) -> MessageId {
     MessageId::from(source_string)
 }
 
-fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError> {
+fn create_node(
+    options: NodeOptions,
+) -> Result<(Swarm<GossipBehaviour>, Multiaddr, PeerId), HubError> {
     let local_key = options
         .keypair
         .unwrap_or(identity::Keypair::generate_ed25519());
@@ -579,8 +412,5 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
     let mut swarm =
         SwarmBuilder::with_tokio_executor(tcp_transport, behaviour, local_peer_id).build();
 
-    swarm.listen_on(listen_multi_addr.clone()).unwrap();
-    swarm.add_external_address(listen_multi_addr);
-
-    Ok(swarm)
+    Ok((swarm, listen_multi_addr, local_peer_id))
 }

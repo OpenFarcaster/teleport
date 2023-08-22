@@ -10,7 +10,7 @@ use std::io::Write;
 use std::{fs::File, str::FromStr};
 
 use libp2p::{identity::ed25519, Multiaddr};
-use network::p2p::gossip_node::{Command, NodeOptions};
+use network::p2p::gossip_node::NodeOptions;
 
 mod cli;
 mod core;
