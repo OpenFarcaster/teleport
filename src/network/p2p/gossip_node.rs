@@ -21,10 +21,13 @@ use void::Void;
 use crate::{
     core::{
         errors::{BadRequestType, HubError, UnavailableType},
-        protobufs::generated::{
+        protobufs::{
             self,
-            gossip_message::{self, Content},
-            ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
+            generated::{
+                self,
+                gossip_message::{self, Content},
+                ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion, MessageData,
+            },
         },
     },
     teleport::AddrInfo,
@@ -57,7 +60,9 @@ pub struct NodeOptions {
     direct_peers: Option<Vec<AddrInfo>>,
 }
 
-pub enum Command {}
+pub enum Command {
+    GossipMessage(protobufs::generated::Message),
+}
 
 impl NodeOptions {
     pub fn new(
@@ -91,7 +96,7 @@ impl GossipNode {
     pub fn new(options: NodeOptions) -> (Self, mpsc::Sender<Command>) {
         let swarm = create_node(options.clone()).expect("Failed to create node");
 
-        let (command_sender, command_receiver) = mpsc::channel(0);
+        let (command_sender, command_receiver) = mpsc::channel(1);
 
         (
             GossipNode {
@@ -106,6 +111,8 @@ impl GossipNode {
     pub async fn start(&mut self, bootstrap_addrs: Vec<Multiaddr>) -> Result<(), HubError> {
         let _ = self.bootstrap(bootstrap_addrs).await;
         let mut interval = time::interval(Duration::from_secs(10));
+
+        println!("Peer ID is: {}", self.swarm.local_peer_id());
 
         let peer_discovery_topic = IdentTopic::new(self.peer_discovery_topic());
         let primary_topic = IdentTopic::new(self.primary_topic());
@@ -139,9 +146,11 @@ impl GossipNode {
                 }
                 event = self.swarm.next() => self.handle_event(event.expect("fgsd")).await,
                 command = self.command_receiver.next() => match command {
-                    _ => {
-                        todo!("Handle comamnd by user")
+                    Some(Command::GossipMessage(message)) => {
+                        self.gossip_message(message).await.unwrap();
                     }
+                    None => {
+                    },
                 }
             }
         }
@@ -151,7 +160,7 @@ impl GossipNode {
         let gossip_message = GossipMessage {
             topics: vec![self.primary_topic()],
             peer_id: self.swarm.local_peer_id().to_bytes(),
-            version: GossipVersion::V11.into(),
+            version: GossipVersion::V11 as i32,
             content: Some(Content::Message(message)),
         };
 
@@ -227,7 +236,39 @@ impl GossipNode {
                 self.handle_peer_discovery_pubsub_event(&behaviour_event)
                     .await;
 
-                println!("Behaviour event: {:?}", behaviour_event);
+                match behaviour_event {
+                    GossipBehaviourEvent::Gossipsub(gossipsub_event) => match gossipsub_event {
+                        Event::Message {
+                            propagation_source,
+                            message_id,
+                            message,
+                        } => {
+                            let raw_data = message.data;
+                            let decoded_message = GossipMessage::decode(raw_data.as_ref()).unwrap();
+
+                            match decoded_message.content {
+                                Some(Content::Message(data)) => {
+                                    // println!("Message: {:?}", data);
+                                }
+                                _ => {
+                                    println!("Unknown message");
+                                }
+                            }
+                        }
+                        Event::Subscribed { peer_id, topic } => {
+                            println!("Subscribed: {:?}", (peer_id, topic))
+                        }
+                        Event::Unsubscribed { peer_id, topic } => {
+                            println!("Unsubscribed: {:?}", (peer_id, topic))
+                        }
+                        Event::GossipsubNotSupported { peer_id } => {
+                            println!("GossipsubNotSupported: {:?}", (peer_id))
+                        }
+                    },
+                    GossipBehaviourEvent::Identify(_) => println!("Identify"),
+                    GossipBehaviourEvent::Ping(_) => println!("Ping"),
+                    GossipBehaviourEvent::BlockedPeer => println!("BlockedPeer"),
+                }
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id,

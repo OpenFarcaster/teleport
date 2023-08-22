@@ -4478,6 +4478,7 @@ dependencies = [
  "clap",
  "env_logger",
  "ethers",
+ "hex",
  "libp2p",
  "libp2p-mplex",
  "prost",

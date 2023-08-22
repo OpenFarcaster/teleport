@@ -29,6 +29,7 @@ tokio = { version = "1.32.0", features = ["full"] }
 void = "1.0.2"
 rocksdb = "0.21.0"
 clap = { version = "4.3.23", features = ["derive"] }
+hex = "0.4.3"
 
 [build-dependencies]
 prost-build = "0.11.9"
