@@ -11,6 +11,7 @@ use std::{fs::File, str::FromStr};
 
 use libp2p::{identity::ed25519, Multiaddr};
 use network::p2p::gossip_node::{Command, NodeOptions};
+use prost::Message;
 
 mod cli;
 mod core;
@@ -65,7 +66,20 @@ async fn main() {
         parent: None,
     };
 
+    // print cast_add_body as JSON
+    println!(
+        "cast add body {:#?}",
+        serde_json::to_string(&cast_add_body).unwrap()
+    );
+
+    println!(
+        "cast add body hex {:#?}",
+        hex::encode(&cast_add_body.encode_to_vec())
+    );
+
     let msg_body = protobufs::generated::message_data::Body::CastAddBody(cast_add_body);
+
+    println!("msg body {:#?}", serde_json::to_string(&msg_body).unwrap());
 
     let fc_time = get_farcaster_time().unwrap();
     let msg_data = protobufs::generated::MessageData {
@@ -76,10 +90,19 @@ async fn main() {
         body: Some(msg_body),
     };
 
-    let data_bytes = prost::Message::encode_to_vec(&msg_data);
+    let patched_msg_data = protobufs::MessageDataPatch(msg_data.clone());
+
+    let data_bytes = patched_msg_data.encode_to_vec();
+
+    println!("data bytes {:#?}", hex::encode(&data_bytes));
+
     let blake_hash = blake3_20(&data_bytes);
 
+    println!("blake hash {:#?}", blake_hash);
+
     let signature = keypair.sign(&blake_hash);
+
+    println!("signature {:#?}", signature);
 
     let message = protobufs::generated::Message {
         data: Some(msg_data),
@@ -89,6 +112,8 @@ async fn main() {
         signature_scheme: SignatureScheme::Ed25519 as i32,
         signer: pub_key.to_bytes().to_vec(),
     };
+
+    println!("message {:#?}", message);
 
     let mut buf = Vec::new();
     let _ = prost::Message::encode(&message, &mut buf);

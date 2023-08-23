@@ -5,6 +5,7 @@ fn main() {
     let src = PathBuf::from("protobufs");
 
     tonic_build::configure()
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .protoc_arg("--experimental_allow_proto3_optional")
         .compile(
             &[

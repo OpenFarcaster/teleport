@@ -3506,8 +3506,7 @@ dependencies = [
 [[package]]
 name = "prost"
 version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b82eaa1d779e9a4bc1c3217db8ffbeabaae1dca241bf70183242128d48681cd"
+source = "git+https://github.com/OpenFarcaster/prost.git#68d165f737c68935301956d7c773b6ec162df012"
 dependencies = [
  "bytes",
  "prost-derive",
@@ -3538,14 +3537,13 @@ dependencies = [
 [[package]]
 name = "prost-derive"
 version = "0.11.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5d2d8d10f3c6ded6da8b05b5fb3b8a5082514344d56c9f871412d29b4e075b4"
+source = "git+https://github.com/OpenFarcaster/prost.git#68d165f737c68935301956d7c773b6ec162df012"
 dependencies = [
  "anyhow",
  "itertools",
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -4132,9 +4130,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.104"
+version = "1.0.105"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "076066c5f1078eac5b722a31827a8832fe108bed65dfa75e233c89f8206e976c"
+checksum = "693151e1ac27563d6dbcec9dee9fbd5da8539b20fa14ad3752b2e6d363ace360"
 dependencies = [
  "itoa",
  "ryu",
@@ -4485,6 +4483,7 @@ dependencies = [
  "prost-build",
  "rocksdb",
  "serde",
+ "serde_json",
  "sled",
  "thiserror",
  "tokio",
