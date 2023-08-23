@@ -90,9 +90,7 @@ async fn main() {
         body: Some(msg_body),
     };
 
-    let patched_msg_data = protobufs::MessageDataPatch(msg_data.clone());
-
-    let data_bytes = patched_msg_data.encode_to_vec();
+    let data_bytes = msg_data.encode_to_vec();
 
     println!("data bytes {:#?}", hex::encode(&data_bytes));
 
