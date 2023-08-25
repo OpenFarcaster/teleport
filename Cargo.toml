@@ -32,6 +32,7 @@ hex = "0.4.3"
 serde_json = "1.0.105"
 cron = "0.12.0"
 chrono = "0.4.26"
+tokio-stream = "0.1.14"
 
 [build-dependencies]
 prost-build = "0.11.9"

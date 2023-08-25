@@ -1,3 +1,4 @@
+use crate::core::protobufs::generated::hub_service_server::HubServiceServer;
 use crate::core::time::get_farcaster_time;
 use crate::core::{
     crypto::blake3::blake3_20,
@@ -6,12 +7,13 @@ use crate::core::{
         generated::{HashScheme, SignatureScheme},
     },
 };
+use crate::rpc::server::HubServer;
 use std::str::FromStr;
 
 use libp2p::{identity::ed25519, Multiaddr};
 use network::p2p::gossip_node::NodeOptions;
 use prost::Message;
-use tokio::signal;
+use tonic::transport::Server;
 
 mod cli;
 mod core;
@@ -30,7 +32,7 @@ async fn main() {
     let keypair = ed25519::Keypair::from(secret_key);
     let pub_key = keypair.public();
 
-    let mut bootstrap_nodes = vec![
+    let bootstrap_nodes = vec![
         Multiaddr::from_str("/ip4/44.196.72.233/tcp/2282").unwrap(),
         Multiaddr::from_str("/ip4/3.223.235.209/tcp/2282").unwrap(),
         Multiaddr::from_str("/ip4/52.20.72.19/tcp/2282").unwrap(),
@@ -118,19 +120,28 @@ async fn main() {
         dns_name: "".to_string(),
     };
 
-    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+    // tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
-    println!("Sending message");
+    // println!("Sending message");
 
-    let res = gossip_node.gossip_message(message);
+    // let res = gossip_node.gossip_message(message);
 
-    println!("broadcast msg successfully");
+    // println!("broadcast msg successfully");
+
+    let addr = "[::1]:2883".parse().unwrap();
+    println!("gRPC Server Listening on {}", addr);
+    let server = HubServer::default();
+
+    let svc = HubServiceServer::new(server);
 
     let shutdown = async {
-        signal::ctrl_c()
+        tokio::signal::ctrl_c()
             .await
-            .expect("Could not register ctrl+c handler");
+            .expect("failed to install ctrl+c handler");
     };
 
-    tokio::join!(shutdown);
+    let _ = Server::builder()
+        .add_service(svc)
+        .serve_with_shutdown(addr, shutdown)
+        .await;
 }
