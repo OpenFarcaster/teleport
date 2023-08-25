@@ -16,7 +16,7 @@ use tokio::spawn;
 use void::Void;
 
 use crate::{
-    core::{
+    common::{
         errors::{BadRequestType, HubError},
         protobufs::generated::{
             self,
@@ -24,7 +24,7 @@ use crate::{
             ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
         },
     },
-    teleport::AddrInfo,
+    hub::AddrInfo,
 };
 
 use super::{

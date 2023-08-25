@@ -1,6 +1,6 @@
 use rocksdb::{SingleThreaded, Transaction, TransactionDB};
 
-use crate::core::errors::HubError;
+use crate::common::errors::HubError;
 
 pub const DB_DIRECTORY: &str = ".rocks";
 pub const MAX_DB_ITERATOR_OPEN_MS: u64 = 60 * 1000;
@@ -102,7 +102,7 @@ fn parse_db_error(e: rocksdb::Error) -> HubError {
     }
 
     return HubError::Unavailable(
-        crate::core::errors::UnavailableType::StorageFailure,
+        crate::common::errors::UnavailableType::StorageFailure,
         e.to_string(),
     );
 }

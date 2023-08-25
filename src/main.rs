@@ -1,6 +1,6 @@
-use crate::core::protobufs::generated::hub_service_server::HubServiceServer;
-use crate::core::time::get_farcaster_time;
-use crate::core::{
+use crate::common::protobufs::generated::hub_service_server::HubServiceServer;
+use crate::common::time::get_farcaster_time;
+use crate::common::{
     crypto::blake3::blake3_20,
     protobufs::{
         self,
@@ -16,11 +16,11 @@ use prost::Message;
 use tonic::transport::Server;
 
 mod cli;
-mod core;
+mod common;
+mod hub;
 mod network;
 mod rpc;
 mod storage;
-mod teleport;
 
 #[tokio::main]
 async fn main() {
@@ -40,7 +40,7 @@ async fn main() {
 
     let id_keypair = libp2p::identity::Keypair::ed25519_from_bytes(&mut secret_key_bytes).unwrap();
 
-    let node_options = NodeOptions::new(core::protobufs::generated::FarcasterNetwork::Mainnet)
+    let node_options = NodeOptions::new(common::protobufs::generated::FarcasterNetwork::Mainnet)
         .with_keypair(id_keypair)
         .with_bootstrap_addrs(bootstrap_nodes);
 

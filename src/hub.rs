@@ -2,7 +2,7 @@ use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use tonic::transport::Channel;
 
 use crate::{
-    core::{
+    common::{
         errors::HubError,
         protobufs::generated::{hub_service_client::HubServiceClient, *},
     },

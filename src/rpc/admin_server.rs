@@ -1,4 +1,4 @@
-use crate::core::protobufs::generated::{admin_service_server::AdminService, *};
+use crate::common::protobufs::generated::{admin_service_server::AdminService, *};
 use tonic::{Request, Response, Status};
 
 #[derive(Debug, Default)]
