@@ -1,12 +1,12 @@
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
-use tonic::transport::{Channel, Server};
+use tonic::transport::Channel;
 
 use crate::{
     core::{
         errors::HubError,
         protobufs::generated::{hub_service_client::HubServiceClient, *},
     },
-    network::p2p::gossip_node::{Command, GossipNode, NodeOptions},
+    network::p2p::{event_loop::Command, gossip_node::GossipNode},
     storage::db::rocksdb::RocksDB,
 };
 
@@ -136,25 +136,25 @@ pub struct Hub {
     // TODO: Chain Events
 }
 
-impl Hub {
-    pub fn new(options: HubOptions) -> Self {
-        let gossip_node_opts = NodeOptions::new(
-            options.network,
-            None,
-            None,
-            None,
-            options.allowed_peers.clone(),
-            options.denied_peers.clone(),
-            options.direct_peers.clone(),
-        );
-        let (gossip_node, command_sender) = GossipNode::new(gossip_node_opts);
-        let rocks_db = RocksDB::new(options.db_name.clone());
+// impl Hub {
+//     pub fn new(options: HubOptions) -> Self {
+//         let gossip_node_opts = NodeOptions::new(
+//             options.network,
+//             None,
+//             None,
+//             None,
+//             options.allowed_peers.clone(),
+//             options.denied_peers.clone(),
+//             options.direct_peers.clone(),
+//         );
+//         let (gossip_node, command_sender) = GossipNode::new(gossip_node_opts);
+//         let rocks_db = RocksDB::new(options.db_name.clone());
 
-        Hub {
-            options,
-            gossip_node,
-            command_sender,
-            rocks_db,
-        }
-    }
-}
+//         Hub {
+//             options,
+//             gossip_node,
+//             command_sender,
+//             rocks_db,
+//         }
+//     }
+// }

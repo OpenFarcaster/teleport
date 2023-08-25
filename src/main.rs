@@ -3,15 +3,15 @@ use crate::core::{
     crypto::blake3::blake3_20,
     protobufs::{
         self,
-        generated::{HashScheme, MessageData, SignatureScheme},
+        generated::{HashScheme, SignatureScheme},
     },
 };
-use std::io::Write;
-use std::{fs::File, str::FromStr};
+use std::str::FromStr;
 
 use libp2p::{identity::ed25519, Multiaddr};
-use network::p2p::gossip_node::{Command, NodeOptions};
+use network::p2p::gossip_node::NodeOptions;
 use prost::Message;
+use tokio::signal;
 
 mod cli;
 mod core;
@@ -38,18 +38,10 @@ async fn main() {
 
     let id_keypair = libp2p::identity::Keypair::ed25519_from_bytes(&mut secret_key_bytes).unwrap();
 
-    let node_options = NodeOptions::new(
-        core::protobufs::generated::FarcasterNetwork::Mainnet,
-        Some(id_keypair),
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let node_options = NodeOptions::new(core::protobufs::generated::FarcasterNetwork::Mainnet)
+        .with_keypair(id_keypair);
 
-    let (mut gossip_node, mut command_sender) =
-        network::p2p::gossip_node::GossipNode::new(node_options);
+    let mut gossip_node = network::p2p::gossip_node::GossipNode::new(node_options);
 
     let mut bootstrap_addrs = Vec::new();
     for node in bootstrap_nodes {
@@ -60,26 +52,26 @@ async fn main() {
     let cast_add_body = protobufs::generated::CastAddBody {
         embeds_deprecated: vec![],
         mentions: vec![],
-        text: "This message is from Teleport".to_string(),
+        text: "This message is from Teleport - test 2".to_string(),
         mentions_positions: vec![],
         embeds: vec![],
         parent: None,
     };
 
-    // print cast_add_body as JSON
-    println!(
-        "cast add body {:#?}",
-        serde_json::to_string(&cast_add_body).unwrap()
-    );
+    // // print cast_add_body as JSON
+    // println!(
+    //     "cast add body {:#?}",
+    //     serde_json::to_string(&cast_add_body).unwrap()
+    // );
 
     println!(
-        "cast add body hex {:#?}",
+        "CastAddBody Hex: {:#?}",
         hex::encode(&cast_add_body.encode_to_vec())
     );
 
     let msg_body = protobufs::generated::message_data::Body::CastAddBody(cast_add_body);
 
-    println!("msg body {:#?}", serde_json::to_string(&msg_body).unwrap());
+    // println!("msg body {:#?}", serde_json::to_string(&msg_body).unwrap());
 
     let fc_time = get_farcaster_time().unwrap();
     let msg_data = protobufs::generated::MessageData {
@@ -92,7 +84,7 @@ async fn main() {
 
     let data_bytes = msg_data.encode_to_vec();
 
-    println!("data bytes {:#?}", hex::encode(&data_bytes));
+    println!("MessageData Hex: {:#?}", hex::encode(&data_bytes));
 
     let blake_hash = blake3_20(&data_bytes);
 
@@ -111,27 +103,39 @@ async fn main() {
         signer: pub_key.to_bytes().to_vec(),
     };
 
-    println!("message {:#?}", message);
+    // println!("message {:#?}", message);
 
     let mut buf = Vec::new();
     let _ = prost::Message::encode(&message, &mut buf);
 
     let hex_msg = hex::encode(buf);
-    println!("Encoded message: {}", hex_msg);
-
-    tokio::spawn(async move {
-        // Sleep for 5 seconds
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-
-        println!("Sending message");
-        let res = command_sender.start_send(Command::GossipMessage(message));
-
-        if let Err(err) = res {
-            println!("Failed to send message: {:?}", err);
-        }
-
-        println!("broadcast msg successfully")
-    });
+    println!("Message Hex: {}", hex_msg);
 
     gossip_node.start(bootstrap_addrs).await;
+
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+    let state = gossip_node.get_state().await.unwrap();
+    let gossip_addr_info = protobufs::generated::GossipAddressInfo {
+        address: state.external_addrs[0].to_string(),
+        family: 4,
+        port: 2282,
+        dns_name: "".to_string(),
+    };
+
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+    println!("Sending message");
+
+    let res = gossip_node.gossip_message(message);
+
+    println!("broadcast msg successfully");
+
+    let shutdown = async {
+        signal::ctrl_c()
+            .await
+            .expect("Could not register ctrl+c handler");
+    };
+
+    tokio::join!(shutdown);
 }
