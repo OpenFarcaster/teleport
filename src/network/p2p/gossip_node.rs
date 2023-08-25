@@ -35,9 +35,6 @@ use super::{
 const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
 
-type GossipNodeSwarmEvent =
-    SwarmEvent<GossipBehaviourEvent, Either<Either<Either<Void, std::io::Error>, Void>, Void>>;
-
 #[derive(Message)]
 pub struct Peer {
     #[prost(bytes, tag = "1")]
@@ -55,6 +52,7 @@ pub struct NodeOptions {
     allowed_peer_ids: Option<Vec<PeerId>>,
     denied_peer_ids: Option<Vec<PeerId>>,
     direct_peers: Option<Vec<AddrInfo>>,
+    bootstrap_addrs: Option<Vec<Multiaddr>>,
 }
 
 impl NodeOptions {
@@ -67,6 +65,7 @@ impl NodeOptions {
             allowed_peer_ids: None,
             denied_peer_ids: None,
             direct_peers: None,
+            bootstrap_addrs: None,
         }
     }
 
@@ -99,6 +98,11 @@ impl NodeOptions {
         self.direct_peers = Some(direct_peers);
         self
     }
+
+    pub fn with_bootstrap_addrs(mut self, bootstrap_addrs: Vec<Multiaddr>) -> Self {
+        self.bootstrap_addrs = Some(bootstrap_addrs);
+        self
+    }
 }
 
 pub(crate) struct GossipNode {
@@ -111,7 +115,8 @@ impl GossipNode {
         let swarm = create_node(options.clone()).expect("Failed to create node");
         let (command_sender, command_receiver) = mpsc::channel(MAX_MESSAGE_QUEUE_SIZE);
 
-        let event_loop = EventLoop::new(options.network, swarm, command_receiver);
+        let event_loop = EventLoop::new(options.network, swarm, command_receiver)
+            .with_bootstrap_addrs(options.bootstrap_addrs.unwrap_or(vec![]));
 
         Self {
             command_sender,
@@ -119,7 +124,7 @@ impl GossipNode {
         }
     }
 
-    pub async fn start(&mut self, bootstrap_addrs: Vec<Multiaddr>) -> Result<(), HubError> {
+    pub async fn start(&mut self) -> Result<(), HubError> {
         let listen_ip_multi_addr = MULTI_ADDR_LOCAL_HOST.to_string();
         let listen_port = {
             let tcp_listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -145,7 +150,9 @@ impl GossipNode {
             .expect("Failed to send StartListening command");
 
         println!("bootstrapping");
-        let _ = self.bootstrap(bootstrap_addrs);
+        self.command_sender
+            .start_send(super::event_loop::Command::Bootstrap)
+            .expect("Failed to send Bootstrap command");
 
         Ok(())
     }
@@ -164,29 +171,6 @@ impl GossipNode {
         self.command_sender
             .start_send(super::event_loop::Command::GossipContactInfo { contact_info })
             .expect("Failed to send GossipContactInfo command");
-        Ok(())
-    }
-
-    pub fn bootstrap(&mut self, bootstrap_addrs: Vec<Multiaddr>) -> Result<(), HubError> {
-        println!("bootstrap_addr len is: {}", bootstrap_addrs.len());
-        if bootstrap_addrs.len() == 0 {
-            return Ok(());
-        }
-
-        for addr in bootstrap_addrs {
-            println!("bootstrapping addr: {}", addr);
-            self.command_sender
-                .start_send(super::event_loop::Command::DialMultiAddr { addr })
-                .expect("Failed to send DialMultiAddr command");
-
-            // if let Err(err) = dial_result {
-            //     return Err(HubError::Unavailable(
-            //         UnavailableType::Generic,
-            //         err.to_string(),
-            //     ));
-            // }
-        }
-
         Ok(())
     }
 
@@ -320,8 +304,7 @@ fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError>
         .multiplex(libp2p_mplex::MplexConfig::new())
         .boxed();
 
-    let mut swarm =
-        SwarmBuilder::with_tokio_executor(tcp_transport, behaviour, local_peer_id).build();
+    let swarm = SwarmBuilder::with_tokio_executor(tcp_transport, behaviour, local_peer_id).build();
 
     Ok(swarm)
 }

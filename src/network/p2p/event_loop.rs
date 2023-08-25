@@ -5,7 +5,7 @@ use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 use crate::core::errors::{BadRequestType, HubError, UnavailableType};
 use crate::core::protobufs::{self, generated};
 use libp2p::futures::channel::oneshot;
-use libp2p::futures::{FutureExt, StreamExt};
+use libp2p::futures::StreamExt;
 use libp2p::gossipsub::IdentTopic;
 use libp2p::swarm::derive_prelude::Either;
 use libp2p::swarm::SwarmEvent;
@@ -22,9 +22,7 @@ pub enum Command {
     StartListening {
         addr: Multiaddr,
     },
-    SubscribeTopic {
-        topic: IdentTopic,
-    },
+    Bootstrap,
     GossipMessage {
         message: protobufs::generated::Message,
     },
@@ -45,16 +43,17 @@ pub struct EventLoopState {
     pub subscribed_topics: Vec<IdentTopic>,
     pub connected_peers: HashMap<Multiaddr, PeerId>,
     pub external_addrs: Vec<Multiaddr>,
+    pub primary_topic: IdentTopic,
+    pub contact_info_topic: IdentTopic,
+    pub peer_discovery_topic: IdentTopic,
+    pub bootstrap_addrs: Vec<Multiaddr>,
 }
 
 pub struct EventLoop {
-    network: generated::FarcasterNetwork,
     swarm: Swarm<GossipBehaviour>,
     command_receiver: mpsc::Receiver<Command>,
-    peer_discovery_interval: Interval,
-    primary_topic: IdentTopic,
-    contact_info_topic: IdentTopic,
-    peer_discovery_topic: IdentTopic,
+    peer_discovery_interval: Option<Interval>,
+    peer_check_interval: Option<Interval>,
     state: EventLoopState,
 }
 
@@ -82,70 +81,85 @@ impl EventLoop {
             subscribed_topics: vec![],
             connected_peers: HashMap::new(),
             external_addrs: vec![],
-        };
-
-        EventLoop {
-            network,
-            swarm,
-            command_receiver,
-            peer_discovery_interval: interval(Duration::from_secs(10)),
             primary_topic,
             contact_info_topic,
             peer_discovery_topic,
+            bootstrap_addrs: vec![],
+        };
+
+        EventLoop {
+            swarm,
+            command_receiver,
+            peer_discovery_interval: None,
+            peer_check_interval: None,
             state,
         }
     }
 
-    pub fn with_interval(mut self, interval: Interval) -> Self {
-        self.peer_discovery_interval = interval;
+    pub fn with_peer_discovery_interval(mut self, interval: Interval) -> Self {
+        self.peer_discovery_interval = Some(interval);
+        self
+    }
+
+    pub fn with_peer_check_interval(mut self, interval: Interval) -> Self {
+        self.peer_check_interval = Some(interval);
         self
     }
 
     pub fn with_primary_topic(mut self, topic: IdentTopic) -> Self {
-        self.primary_topic = topic;
+        self.state.primary_topic = topic;
         self
     }
 
     pub fn with_contact_info_topic(mut self, topic: IdentTopic) -> Self {
-        self.contact_info_topic = topic;
+        self.state.contact_info_topic = topic;
         self
     }
 
     pub fn with_peer_discovery_topic(mut self, topic: IdentTopic) -> Self {
-        self.peer_discovery_topic = topic;
+        self.state.peer_discovery_topic = topic;
+        self
+    }
+
+    pub fn with_bootstrap_addrs(mut self, addrs: Vec<Multiaddr>) -> Self {
+        self.state.bootstrap_addrs = addrs;
         self
     }
 
     pub async fn run(&mut self) {
-        println!("Staring to run");
-        let _ = self
-            .swarm
-            .behaviour_mut()
-            .gossipsub
-            .subscribe(&self.peer_discovery_topic);
+        let peer_discovery_interval = interval(Duration::from_secs(10));
+        let periodic_peer_check_interval = interval(Duration::from_secs(4 * 60 * 60));
 
         let _ = self
             .swarm
             .behaviour_mut()
             .gossipsub
-            .subscribe(&self.primary_topic);
+            .subscribe(&self.state.peer_discovery_topic);
 
         let _ = self
             .swarm
             .behaviour_mut()
             .gossipsub
-            .subscribe(&self.contact_info_topic);
+            .subscribe(&self.state.primary_topic);
+
+        let _ = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&self.state.contact_info_topic);
 
         self.state.is_listening = true;
         self.state
             .subscribed_topics
-            .push(self.peer_discovery_topic.clone());
+            .push(self.state.peer_discovery_topic.clone());
         self.state
             .subscribed_topics
-            .push(self.primary_topic.clone());
+            .push(self.state.primary_topic.clone());
         self.state
             .subscribed_topics
-            .push(self.contact_info_topic.clone());
+            .push(self.state.contact_info_topic.clone());
+        self.peer_discovery_interval = Some(peer_discovery_interval);
+        self.peer_check_interval = Some(periodic_peer_check_interval);
 
         loop {
             tokio::select! {
@@ -154,8 +168,11 @@ impl EventLoop {
                     Some(command) => self.handle_command(command),
                     None => return,
                 },
-                _ = self.peer_discovery_interval.tick() => {
+                _ = self.peer_discovery_interval.as_mut().unwrap().tick() => {
                     self.peer_discovery_broadcast();
+                }
+                _ = self.peer_check_interval.as_mut().unwrap().tick() => {
+                    self.bootstrap();
                 }
                 _ = tokio::signal::ctrl_c() => {
                     println!("Received ctrl-c");
@@ -176,7 +193,9 @@ impl EventLoop {
                             message,
                         } => {
                             // Handle pubsub peer discovery event
-                            if message.topic.to_string() == self.peer_discovery_topic.to_string() {
+                            if message.topic.to_string()
+                                == self.state.peer_discovery_topic.to_string()
+                            {
                                 let local_external_addrs: Vec<String> = self
                                     .swarm
                                     .external_addresses()
@@ -300,8 +319,8 @@ impl EventLoop {
                 self.swarm.listen_on(addr.clone()).unwrap();
                 self.swarm.add_external_address(addr);
             }
-            Command::SubscribeTopic { topic } => {
-                self.swarm.behaviour_mut().gossipsub.subscribe(&topic);
+            Command::Bootstrap => {
+                self.bootstrap();
             }
             Command::GossipMessage { message } => {
                 let res = self.gossip_message(message);
@@ -329,6 +348,18 @@ impl EventLoop {
         }
     }
 
+    fn bootstrap(&mut self) {
+        if self.state.bootstrap_addrs.len() == 0 {
+            return;
+        }
+
+        let bootstrap_addrs = self.state.bootstrap_addrs.clone();
+
+        for addr in bootstrap_addrs {
+            self.dial_multi_addr(addr);
+        }
+    }
+
     fn peer_discovery_broadcast(&mut self) {
         println!("Broadcasting peer discovery");
         let peer_id_bytes = self.swarm.local_peer_id().to_bytes();
@@ -344,7 +375,7 @@ impl EventLoop {
         let mut encoded_peer = Vec::new();
         peer.encode(&mut encoded_peer).unwrap();
 
-        let topic = self.peer_discovery_topic.clone();
+        let topic = self.state.peer_discovery_topic.clone();
 
         let _ = self
             .swarm
@@ -355,7 +386,7 @@ impl EventLoop {
 
     fn gossip_message(&mut self, message: generated::Message) -> Result<(), HubError> {
         let gossip_message = generated::GossipMessage {
-            topics: vec![self.primary_topic.to_string()],
+            topics: vec![self.state.primary_topic.to_string()],
             peer_id: self.swarm.local_peer_id().to_bytes(),
             version: generated::GossipVersion::V11 as i32,
             content: Some(generated::gossip_message::Content::Message(message)),
@@ -369,7 +400,7 @@ impl EventLoop {
         contact_info: generated::ContactInfoContent,
     ) -> Result<(), HubError> {
         let gossip_message = generated::GossipMessage {
-            topics: vec![self.contact_info_topic.to_string()],
+            topics: vec![self.state.contact_info_topic.to_string()],
             peer_id: self.swarm.local_peer_id().to_bytes(),
             version: generated::GossipVersion::V11.into(),
             content: Some(generated::gossip_message::Content::ContactInfoContent(

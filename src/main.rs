@@ -30,24 +30,19 @@ async fn main() {
     let keypair = ed25519::Keypair::from(secret_key);
     let pub_key = keypair.public();
 
-    let bootstrap_nodes = vec![
-        "/ip4/44.196.72.233/tcp/2282",
-        "/ip4/3.223.235.209/tcp/2282",
-        "/ip4/52.20.72.19/tcp/2282",
+    let mut bootstrap_nodes = vec![
+        Multiaddr::from_str("/ip4/44.196.72.233/tcp/2282").unwrap(),
+        Multiaddr::from_str("/ip4/3.223.235.209/tcp/2282").unwrap(),
+        Multiaddr::from_str("/ip4/52.20.72.19/tcp/2282").unwrap(),
     ];
 
     let id_keypair = libp2p::identity::Keypair::ed25519_from_bytes(&mut secret_key_bytes).unwrap();
 
     let node_options = NodeOptions::new(core::protobufs::generated::FarcasterNetwork::Mainnet)
-        .with_keypair(id_keypair);
+        .with_keypair(id_keypair)
+        .with_bootstrap_addrs(bootstrap_nodes);
 
     let mut gossip_node = network::p2p::gossip_node::GossipNode::new(node_options);
-
-    let mut bootstrap_addrs = Vec::new();
-    for node in bootstrap_nodes {
-        let addr = Multiaddr::from_str(node);
-        bootstrap_addrs.push(addr.unwrap());
-    }
 
     let cast_add_body = protobufs::generated::CastAddBody {
         embeds_deprecated: vec![],
@@ -111,7 +106,7 @@ async fn main() {
     let hex_msg = hex::encode(buf);
     println!("Message Hex: {}", hex_msg);
 
-    gossip_node.start(bootstrap_addrs).await;
+    gossip_node.start().await;
 
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
 
