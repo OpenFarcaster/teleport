@@ -10,6 +10,7 @@ use crate::common::{
 use crate::rpc::server::HubServer;
 use std::str::FromStr;
 
+use clap::Parser;
 use libp2p::{identity::ed25519, Multiaddr};
 use network::p2p::gossip_node::NodeOptions;
 use prost::Message;
@@ -25,6 +26,10 @@ mod storage;
 #[tokio::main]
 async fn main() {
     env_logger::init();
+
+    let args = cli::Cli::parse();
+
+    println!("Args {:#?}", args);
 
     let priv_key_hex = std::env::var("FARCASTER_PRIV_KEY").unwrap();
     let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");
