@@ -29,7 +29,34 @@ async fn main() {
 
     let args = cli::Cli::parse();
 
-    println!("Args {:#?}", args);
+    match args.command {
+        cli::Commands::Start(start_args) => {
+            println!("Starting hub with args {:#?}", start_args);
+        }
+        cli::Commands::Identity(identity_args) => match identity_args.command {
+            cli::IdentityCommands::Create(create_args) => {
+                println!("Create args {:#?}", create_args);
+            }
+            cli::IdentityCommands::Verify(verify_args) => {
+                println!("Verify args {:#?}", verify_args);
+            }
+        },
+        cli::Commands::Status(status_args) => {
+            println!("Status args {:#?}", status_args);
+        }
+        cli::Commands::Profile(profile_args) => match profile_args.command {
+            cli::ProfileCommands::Gossip(profile_gossip_args) => todo!(),
+            cli::ProfileCommands::Rpc(profile_rpc_args) => todo!(),
+            cli::ProfileCommands::Storage(profile_storage_args) => todo!(),
+        },
+        cli::Commands::Reset(reset_args) => match reset_args.command {
+            cli::ResetCommands::Events(reset_events_args) => todo!(),
+            cli::ResetCommands::Full(reset_full_args) => todo!(),
+        },
+        cli::Commands::Console(console_args) => {
+            println!("Console args {:#?}", console_args);
+        }
+    }
 
     let priv_key_hex = std::env::var("FARCASTER_PRIV_KEY").unwrap();
     let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");
@@ -60,17 +87,6 @@ async fn main() {
         parent: None,
     };
 
-    // // print cast_add_body as JSON
-    // println!(
-    //     "cast add body {:#?}",
-    //     serde_json::to_string(&cast_add_body).unwrap()
-    // );
-
-    println!(
-        "CastAddBody Hex: {:#?}",
-        hex::encode(&cast_add_body.encode_to_vec())
-    );
-
     let msg_body = protobufs::generated::message_data::Body::CastAddBody(cast_add_body);
 
     // println!("msg body {:#?}", serde_json::to_string(&msg_body).unwrap());
@@ -86,15 +102,9 @@ async fn main() {
 
     let data_bytes = msg_data.encode_to_vec();
 
-    println!("MessageData Hex: {:#?}", hex::encode(&data_bytes));
-
     let blake_hash = blake3_20(&data_bytes);
 
-    println!("blake hash {:#?}", blake_hash);
-
     let signature = keypair.sign(&blake_hash);
-
-    println!("signature {:#?}", signature);
 
     let message = protobufs::generated::Message {
         data: Some(msg_data),
@@ -111,7 +121,6 @@ async fn main() {
     let _ = prost::Message::encode(&message, &mut buf);
 
     let hex_msg = hex::encode(buf);
-    println!("Message Hex: {}", hex_msg);
 
     gossip_node.start().await;
 

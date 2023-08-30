@@ -26,7 +26,7 @@ mod status;
 )]
 pub struct Cli {
     #[command(subcommand)]
-    command: Commands,
+    pub command: Commands,
 }
 
 #[derive(Subcommand, Debug)]
@@ -48,7 +48,7 @@ pub enum Commands {
 #[derive(Args, Debug)]
 pub struct IdentityArgs {
     #[command(subcommand)]
-    command: IdentityCommands,
+    pub command: IdentityCommands,
 }
 
 #[derive(Subcommand, Debug)]
@@ -60,7 +60,7 @@ pub enum IdentityCommands {
 #[derive(Args, Debug)]
 pub struct ProfileArgs {
     #[command(subcommand)]
-    command: ProfileCommands,
+    pub command: ProfileCommands,
 }
 
 #[derive(Subcommand, Debug)]
@@ -73,7 +73,7 @@ pub enum ProfileCommands {
 #[derive(Args, Debug)]
 pub struct ResetArgs {
     #[command(subcommand)]
-    command: ResetCommands,
+    pub command: ResetCommands,
 }
 
 #[derive(Subcommand, Debug)]
