@@ -9,5 +9,5 @@ pub struct VerifyIdentityCommand {
         help="Path to the PeerId file",
         default_value_t=String::from("./.hub/default_id.protobuf")
     )]
-    id: String,
+    pub id: String,
 }

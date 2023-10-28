@@ -220,9 +220,7 @@ pub fn get_message_id(primary_topic: &str, message: &GossipSubMessage) -> Messag
                         gossip_message::Content::Message(message_content) => {
                             return MessageId::from(message_content.hash);
                         }
-                        gossip_message::Content::IdRegistryEvent(event_content) => {
-                            return MessageId::from(event_content.transaction_hash);
-                        }
+
                         _ => {}
                     }
                 }

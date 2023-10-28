@@ -388,7 +388,7 @@ impl EventLoop {
         let gossip_message = generated::GossipMessage {
             topics: vec![self.state.primary_topic.to_string()],
             peer_id: self.swarm.local_peer_id().to_bytes(),
-            version: generated::GossipVersion::V11 as i32,
+            version: 1,
             content: Some(generated::gossip_message::Content::Message(message)),
         };
 

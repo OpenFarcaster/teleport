@@ -18,18 +18,6 @@ impl AdminService for AdminServer {
     ) -> Result<Response<Empty>, Status> {
         todo!()
     }
-    async fn submit_id_registry_event(
-        &self,
-        request: Request<IdRegistryEvent>,
-    ) -> Result<Response<IdRegistryEvent>, Status> {
-        todo!()
-    }
-    async fn submit_name_registry_event(
-        &self,
-        request: Request<NameRegistryEvent>,
-    ) -> Result<Response<NameRegistryEvent>, Status> {
-        todo!()
-    }
     async fn submit_on_chain_event(
         &self,
         request: Request<OnChainEvent>,

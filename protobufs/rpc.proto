@@ -1,8 +1,6 @@
 syntax = "proto3";
 
 import "message.proto";
-import "id_registry_event.proto";
-import "name_registry_event.proto";
 import "hub_event.proto";
 import "request_response.proto";
 import "username_proof.proto";
@@ -31,9 +29,6 @@ service HubService {
   // User Data
   rpc GetUserData(UserDataRequest) returns (Message);
   rpc GetUserDataByFid(FidRequest) returns (MessagesResponse);
-  rpc GetNameRegistryEvent(NameRegistryEventRequest) returns (NameRegistryEvent);
-  rpc GetOnChainEvents(OnChainEventRequest) returns (OnChainEventResponse);
-  rpc GetCurrentStorageLimitsByFid(FidRequest) returns (StorageLimitsResponse);
 
   // Username Proof
   rpc GetUsernameProof(UsernameProofRequest) returns (UserNameProof);
@@ -43,12 +38,14 @@ service HubService {
   rpc GetVerification(VerificationRequest) returns (Message);
   rpc GetVerificationsByFid(FidRequest) returns (MessagesResponse);
 
-  // Signer
-  rpc GetSigner(SignerRequest) returns (Message);
+  // OnChain Events
   rpc GetOnChainSigner(SignerRequest) returns (OnChainEvent);
-  rpc GetSignersByFid(FidRequest) returns (MessagesResponse);
-  rpc GetIdRegistryEvent(IdRegistryEventRequest) returns (IdRegistryEvent);
-  rpc GetIdRegistryEventByAddress(IdRegistryEventByAddressRequest) returns (IdRegistryEvent);
+  rpc GetOnChainSignersByFid(FidRequest) returns (OnChainEventResponse);
+  rpc GetOnChainEvents(OnChainEventRequest) returns (OnChainEventResponse);
+  rpc GetIdRegistryOnChainEvent(FidRequest) returns (OnChainEvent);
+  rpc GetIdRegistryOnChainEventByAddress(IdRegistryEventByAddressRequest) returns (OnChainEvent);
+  rpc GetCurrentStorageLimitsByFid(FidRequest) returns (StorageLimitsResponse);
+
   rpc GetFids(FidsRequest) returns (FidsResponse);
 
   // Links
@@ -60,7 +57,6 @@ service HubService {
   rpc GetAllCastMessagesByFid(FidRequest) returns (MessagesResponse);
   rpc GetAllReactionMessagesByFid(FidRequest) returns (MessagesResponse);
   rpc GetAllVerificationMessagesByFid(FidRequest) returns (MessagesResponse);
-  rpc GetAllSignerMessagesByFid(FidRequest) returns (MessagesResponse);
   rpc GetAllUserDataMessagesByFid(FidRequest) returns (MessagesResponse);
   rpc GetAllLinkMessagesByFid(FidRequest) returns (MessagesResponse);
 
@@ -77,7 +73,5 @@ service AdminService {
   rpc RebuildSyncTrie(Empty) returns (Empty);
   rpc DeleteAllMessagesFromDb(Empty) returns (Empty);
   
-  rpc SubmitIdRegistryEvent(IdRegistryEvent) returns (IdRegistryEvent);
-  rpc SubmitNameRegistryEvent(NameRegistryEvent) returns (NameRegistryEvent);
   rpc SubmitOnChainEvent(OnChainEvent) returns (OnChainEvent);
 }

@@ -12,7 +12,6 @@ fn main() {
                 src.join("gossip.proto"),
                 src.join("hub_event.proto"),
                 src.join("hub_state.proto"),
-                src.join("id_registry_event.proto"),
                 src.join("job.proto"),
                 src.join("message.proto"),
                 src.join("name_registry_event.proto"),
@@ -21,6 +20,7 @@ fn main() {
                 src.join("rpc.proto"),
                 src.join("sync_trie.proto"),
                 src.join("username_proof.proto"),
+                src.join("peer_id.proto"),
             ],
             &["protobufs"],
         )

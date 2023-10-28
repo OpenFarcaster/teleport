@@ -1,11 +1,7 @@
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
-use tonic::transport::Channel;
 
 use crate::{
-    common::{
-        errors::HubError,
-        protobufs::generated::{hub_service_client::HubServiceClient, *},
-    },
+    common::protobufs::generated::*,
     network::p2p::{event_loop::Command, gossip_node::GossipNode},
     storage::db::rocksdb::RocksDB,
 };
@@ -19,108 +15,67 @@ enum HubSubmitSource {
     FNameRegistry,
 }
 
-trait HubInterface {
-    fn submit_message(
-        &self,
-        message: Message,
-        source: Option<HubSubmitSource>,
-    ) -> Result<u128, HubError>;
-
-    fn submit_id_registry_event(
-        &self,
-        event: IdRegistryEvent,
-        source: Option<HubSubmitSource>,
-    ) -> Result<u128, HubError>;
-
-    fn submit_name_registry_event(
-        &self,
-        event: NameRegistryEvent,
-        source: Option<HubSubmitSource>,
-    ) -> Result<u128, HubError>;
-
-    fn submit_username_proof(
-        &self,
-        proof: UserNameProof,
-        source: Option<HubSubmitSource>,
-    ) -> Result<u128, HubError>;
-
-    fn submit_onchain_event(
-        &self,
-        event: OnChainEvent,
-        source: Option<HubSubmitSource>,
-    ) -> Result<u128, HubError>;
-
-    fn get_hub_state(&self) -> Result<HubState, HubError>;
-
-    fn put_hub_state(&self, state: HubState) -> Result<(), HubError>;
-
-    fn gossip_contact_info(&self) -> Result<(), HubError>;
-
-    fn get_rpc_client_for_peer(
-        &self,
-        peer_id: PeerId,
-        peer: ContactInfoContent,
-    ) -> Result<HubServiceClient<Channel>, HubError>;
-}
-
-struct TestUser {
+#[derive(Debug, Clone)]
+pub struct TestUser {
     fid: u64,
     mnemonic: String,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct AddrInfo {
     pub id: PeerId,
     pub addrs: Vec<Multiaddr>,
 }
 
+#[derive(Debug, Clone)]
 pub struct HubOptions {
-    network: FarcasterNetwork,
-    peer_id: Option<PeerId>,
-    bootstrap_addrs: Option<Vec<Multiaddr>>,
-    allowed_peers: Option<Vec<PeerId>>,
-    denied_peers: Option<Vec<PeerId>>,
-    ip_multi_addr: Option<String>,
-    rpc_server_host: Option<String>,
-    anounce_ip: Option<String>,
-    announce_server_name: Option<String>,
-    gossip_port: Option<u16>,
-    rpc_port: Option<u16>,
-    rpc_auth: Option<String>,
-    rpc_rate_limit: Option<u128>,
-    rank_rpcs: Option<bool>,
-    eth_rpc_url: Option<String>,
-    eth_mainnet_rpc_url: Option<String>,
-    fname_server_url: Option<String>,
-    l2_rpc_url: Option<String>,
-    id_registry_address: Option<String>,
-    name_registry_address: Option<String>,
-    l2_id_registry_address: Option<String>,
-    l2_key_registry_address: Option<String>,
-    l2_storage_registry_address: Option<String>,
-    first_block: Option<u64>,
-    chunk_size: Option<u64>,
-    l2_first_block: Option<u64>,
-    l2_chunk_size: Option<u64>,
-    l2_chain_id: Option<u64>,
-    l2_rent_expiry_override: Option<u64>,
-    l2_resync_events: Option<bool>,
-    eth_resync_events: Option<bool>,
-    resync_name_events: Option<bool>,
-    db_name: Option<String>,
-    reset_db: Option<bool>,
-    profile_sync: Option<bool>,
-    rebuild_sync_trie: Option<bool>,
-    commit_lock_timeout: u64,
-    commit_lock_max_pending: u64,
-    admin_server_enabled: Option<bool>,
-    admin_server_host: Option<String>,
-    test_users: Option<Vec<TestUser>>,
-    local_ip_addrs_only: Option<bool>,
-    prune_messages_job_cron: Option<String>,
-    prune_events_job_cron: Option<String>,
-    gossip_metrics_enabled: Option<bool>,
-    direct_peers: Option<Vec<AddrInfo>>,
+    pub network: FarcasterNetwork,
+    pub peer_id: Option<PeerId>,
+    pub bootstrap_addrs: Option<Vec<Multiaddr>>,
+    pub allowed_peers: Option<Vec<PeerId>>,
+    pub denied_peers: Option<Vec<PeerId>>,
+    pub ip_multi_addr: Option<String>,
+    pub rpc_server_host: Option<String>,
+    pub anounce_ip: Option<String>,
+    pub announce_server_name: Option<String>,
+    pub gossip_port: Option<u16>,
+    pub rpc_port: Option<u16>,
+    pub rpc_auth: Option<String>,
+    pub rpc_rate_limit: Option<u128>,
+    pub rank_rpcs: Option<bool>,
+    pub eth_rpc_url: Option<String>,
+    pub eth_mainnet_rpc_url: Option<String>,
+    pub fname_server_url: Option<String>,
+    pub l2_rpc_url: Option<String>,
+    pub id_registry_address: Option<String>,
+    pub name_registry_address: Option<String>,
+    pub l2_id_registry_address: Option<String>,
+    pub l2_key_registry_address: Option<String>,
+    pub l2_storage_registry_address: Option<String>,
+    pub first_block: Option<u64>,
+    pub chunk_size: Option<u64>,
+    pub l2_first_block: Option<u64>,
+    pub l2_chunk_size: Option<u64>,
+    pub l2_chain_id: Option<u64>,
+    pub l2_rent_expiry_override: Option<u64>,
+    pub l2_resync_events: Option<bool>,
+    pub eth_resync_events: Option<bool>,
+    pub resync_name_events: Option<bool>,
+    pub db_name: Option<String>,
+    pub reset_db: Option<bool>,
+    pub profile_sync: Option<bool>,
+    pub rebuild_sync_trie: Option<bool>,
+    pub commit_lock_timeout: u64,
+    pub commit_lock_max_pending: u64,
+    pub admin_server_enabled: Option<bool>,
+    pub admin_server_host: Option<String>,
+    pub test_users: Option<Vec<TestUser>>,
+    pub local_ip_addrs_only: Option<bool>,
+    pub prune_messages_job_cron: Option<String>,
+    pub prune_events_job_cron: Option<String>,
+    pub gossip_metrics_enabled: Option<bool>,
+    pub direct_peers: Option<Vec<AddrInfo>>,
+    pub hub_operator_fid: Option<u64>,
 }
 
 pub struct Hub {
