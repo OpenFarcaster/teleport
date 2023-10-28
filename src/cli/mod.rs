@@ -11,12 +11,12 @@ use self::{
     status::StatusCommand,
 };
 
-mod console;
-mod identity;
-mod profile;
-mod reset;
-mod start;
-mod status;
+pub mod console;
+pub mod identity;
+pub mod profile;
+pub mod reset;
+pub mod start;
+pub mod status;
 
 #[derive(Parser, Debug)]
 #[command(name = "teleport")]

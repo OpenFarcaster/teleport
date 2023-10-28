@@ -6,3 +6,4 @@ message DbTrieNode {
   uint32 items = 3;
   bytes hash = 4;
 }
+

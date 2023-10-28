@@ -87,16 +87,23 @@ impl HubService for HubServer {
     ) -> Result<Response<MessagesResponse>, Status> {
         todo!()
     }
-    async fn get_name_registry_event(
-        &self,
-        request: Request<NameRegistryEventRequest>,
-    ) -> Result<Response<NameRegistryEvent>, Status> {
-        todo!()
-    }
+
     async fn get_on_chain_events(
         &self,
         request: Request<OnChainEventRequest>,
     ) -> Result<Response<OnChainEventResponse>, Status> {
+        todo!()
+    }
+    async fn get_id_registry_on_chain_event(
+        &self,
+        request: Request<FidRequest>,
+    ) -> Result<Response<OnChainEvent>, Status> {
+        todo!()
+    }
+    async fn get_id_registry_on_chain_event_by_address(
+        &self,
+        request: Request<IdRegistryEventByAddressRequest>,
+    ) -> Result<Response<OnChainEvent>, Status> {
         todo!()
     }
     async fn get_current_storage_limits_by_fid(
@@ -132,36 +139,19 @@ impl HubService for HubServer {
         todo!()
     }
     /// Signer
-    async fn get_signer(
-        &self,
-        request: Request<SignerRequest>,
-    ) -> Result<Response<Message>, Status> {
-        todo!()
-    }
     async fn get_on_chain_signer(
         &self,
         request: Request<SignerRequest>,
     ) -> Result<Response<OnChainEvent>, Status> {
         todo!()
     }
-    async fn get_signers_by_fid(
+    async fn get_on_chain_signers_by_fid(
         &self,
         request: Request<FidRequest>,
-    ) -> Result<Response<MessagesResponse>, Status> {
+    ) -> Result<Response<OnChainEventResponse>, Status> {
         todo!()
     }
-    async fn get_id_registry_event(
-        &self,
-        request: Request<IdRegistryEventRequest>,
-    ) -> Result<Response<IdRegistryEvent>, Status> {
-        todo!()
-    }
-    async fn get_id_registry_event_by_address(
-        &self,
-        request: Request<IdRegistryEventByAddressRequest>,
-    ) -> Result<Response<IdRegistryEvent>, Status> {
-        todo!()
-    }
+
     async fn get_fids(
         &self,
         request: Request<FidsRequest>,
@@ -203,12 +193,7 @@ impl HubService for HubServer {
     ) -> Result<Response<MessagesResponse>, Status> {
         todo!()
     }
-    async fn get_all_signer_messages_by_fid(
-        &self,
-        request: Request<FidRequest>,
-    ) -> Result<Response<MessagesResponse>, Status> {
-        todo!()
-    }
+
     async fn get_all_user_data_messages_by_fid(
         &self,
         request: Request<FidRequest>,

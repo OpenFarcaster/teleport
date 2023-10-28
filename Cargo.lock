@@ -2859,6 +2859,7 @@ dependencies = [
  "hex",
  "libp2p",
  "libp2p-mplex",
+ "log",
  "prost",
  "prost-build",
  "rocksdb",

@@ -12,7 +12,7 @@ pub struct CreateIdentityCommand {
         help="Path to where the generated PeerIds should be stored",
         default_value_t=String::from("./.hub")
     )]
-    output: String,
+    pub output: String,
 
     #[arg(
         short = 'N',
@@ -20,5 +20,5 @@ pub struct CreateIdentityCommand {
         help = "Number of PeerIds to generate",
         default_value_t = 1
     )]
-    count: u32,
+    pub count: u32,
 }
