@@ -26,5 +26,13 @@ Persistent Storage, handling received messages from peers, and historical data s
 ## Prerequisites
 
 - Rust
-- Protobufs Compiler
-- RocksDB binaries
+- Protobufs Compiler (`brew install protobuf` or `apt install -y protobuf-compiler`)
+- RocksDB binaries ([Instructions here](https://github.com/facebook/rocksdb/blob/master/INSTALL.md))
+
+## Prost Patch
+
+Up until recently, there was a Protobuf incompatibility issue with using `prost` in this codebase compared to `ts-proto` that is used in Hubble. As such, we have a patched version of `prost` that is used ([Found Here](https://github.com/OpenFarcaster/prost)).
+
+In a recent update the Protobuf schema was updated to add a new field that allows us to get by that issue by serializing the message differently. That hasn't been implemented yet in Teleport but technically we don't need to maintain a patched version of `prost` anymore.
+
+This is a TODO item.
