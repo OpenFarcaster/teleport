@@ -14,7 +14,7 @@ There are a few things Teleport is currently capable of, and a lot more it is no
 
 A lot is still left to do:
 
-- [ ] Persistently store data in RocksDB
+- [ ] Persistently store data in SQLite
 - [ ] gRPC APIs for users/admins
 - [ ] Be able to sync historical data with nodes
 - [ ] Exchange contact info
@@ -35,4 +35,16 @@ Up until recently, there was a Protobuf incompatibility issue with using `prost`
 
 In a recent update the Protobuf schema was updated to add a new field that allows us to get by that issue by serializing the message differently. That hasn't been implemented yet in Teleport but technically we don't need to maintain a patched version of `prost` anymore.
 
-This is a TODO item.
+## Database
+
+1. create the database
+
+```bash
+$ make db-create
+```
+
+2. run the migrations
+
+```bash
+$ make db-migrate
+```

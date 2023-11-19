@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
-use crate::common::errors::{BadRequestType, HubError, UnavailableType};
-use crate::common::protobufs::{self, generated};
+use teleport_common::errors::{BadRequestType, HubError, UnavailableType};
+use teleport_common::protobufs::{self, generated};
 use libp2p::futures::channel::oneshot;
 use libp2p::futures::StreamExt;
 use libp2p::gossipsub::IdentTopic;

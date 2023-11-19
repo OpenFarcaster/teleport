@@ -1,4 +1,4 @@
-use crate::common::protobufs::generated::{hub_service_server::HubService, *};
+use teleport_common::protobufs::generated::{hub_service_server::HubService, *};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 

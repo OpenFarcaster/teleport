@@ -1,36 +1,32 @@
-use crate::common::protobufs::generated::hub_service_server::HubServiceServer;
-use crate::common::protobufs::generated::{cast_add_body, CastId, FarcasterNetwork, PeerIdProto};
-use crate::common::time::get_farcaster_time;
-use crate::common::{
+pub mod hub;
+pub mod p2p;
+pub mod storage;
+pub mod sync;
+
+use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
+use teleport_common::protobufs::generated::{cast_add_body, CastId, FarcasterNetwork, PeerIdProto};
+use teleport_common::time::get_farcaster_time;
+use teleport_common::{
     crypto::blake3::blake3_20,
     protobufs::{
         self,
         generated::{HashScheme, SignatureScheme},
     },
 };
-use crate::hub::{AddrInfo, HubOptions};
-use crate::rpc::server::HubServer;
+//use crate::{HubOptions};
 use std::fs::{self, canonicalize};
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
+use teleport_rpc::server::HubServer;
 
-use clap::Parser;
-use common::peer_id::{create_ed25519_peer_id, write_peer_id};
 use libp2p::PeerId;
 use libp2p::{identity::ed25519, Multiaddr};
 use log::info;
-use network::p2p::gossip_node::NodeOptions;
+use p2p::gossip_node::NodeOptions;
 use prost::Message;
-use tokio::select;
+use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
 use tonic::transport::Server;
-
-mod cli;
-mod common;
-mod hub;
-mod network;
-mod rpc;
-mod storage;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";
 const DEFAULT_PEER_ID_FILENAME: &str = "default_id.protobuf";
@@ -38,6 +34,8 @@ const DEFAULT_PEER_ID_FILENAME: &str = "default_id.protobuf";
 #[tokio::main]
 async fn main() {
     env_logger::init();
+
+    // run migrations
 
     // let args = cli::Cli::parse();
 
@@ -82,11 +80,12 @@ async fn main() {
 
     let id_keypair = libp2p::identity::Keypair::ed25519_from_bytes(&mut secret_key_bytes).unwrap();
 
-    let node_options = NodeOptions::new(common::protobufs::generated::FarcasterNetwork::Mainnet)
-        .with_keypair(id_keypair)
-        .with_bootstrap_addrs(bootstrap_nodes);
+    let node_options =
+        NodeOptions::new(teleport_common::protobufs::generated::FarcasterNetwork::Mainnet)
+            .with_keypair(id_keypair)
+            .with_bootstrap_addrs(bootstrap_nodes);
 
-    let mut gossip_node = network::p2p::gossip_node::GossipNode::new(node_options);
+    let mut gossip_node = p2p::gossip_node::GossipNode::new(node_options);
 
     let cast_add_body = protobufs::generated::CastAddBody {
         embeds_deprecated: vec![],
@@ -181,7 +180,7 @@ async fn main() {
         .await;
 }
 
-fn start(args: cli::start::StartCommand) {
+fn start(args: teleport_cli::start::StartCommand) {
     info!("Teleport Starting...");
 
     // TODO: Handle reading a TOML config file
@@ -211,7 +210,7 @@ fn start(args: cli::start::StartCommand) {
 
     // TODO: Metrics
 
-    let hub_options = HubOptions {
+    let hub_options = hub::HubOptions {
         network: FarcasterNetwork::from_str_name(
             args.teleport_options
                 .network
@@ -270,7 +269,7 @@ fn start(args: cli::start::StartCommand) {
     info!("Hub Options: {:#?}", hub_options);
 }
 
-fn identity_create(args: cli::identity::create::CreateIdentityCommand) {
+fn identity_create(args: teleport_cli::identity::create::CreateIdentityCommand) {
     for i in 0..args.count {
         let peer_id_proto = create_ed25519_peer_id(false);
 
@@ -297,7 +296,7 @@ fn identity_create(args: cli::identity::create::CreateIdentityCommand) {
     exit(0);
 }
 
-fn identity_verify(args: cli::identity::verify::VerifyIdentityCommand) {
+fn identity_verify(args: teleport_cli::identity::verify::VerifyIdentityCommand) {
     println!("Verify args {:#?}", args);
 
     let filepath = canonicalize(PathBuf::from(args.id.as_str())).unwrap();

@@ -2,11 +2,12 @@ extern crate prost_build;
 use std::path::PathBuf;
 
 fn main() {
-    let src = PathBuf::from("protobufs");
+    let src = PathBuf::from("../../protobufs");
 
     tonic_build::configure()
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .protoc_arg("--experimental_allow_proto3_optional")
+        .protoc_arg("--proto_path=../../protobufs")
         .compile(
             &[
                 src.join("gossip.proto"),

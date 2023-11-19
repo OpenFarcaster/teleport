@@ -1,4 +1,4 @@
-use crate::storage::db::rocksdb::RocksDB;
+use crate::storage::Store;
 use std::collections::HashMap;
 
 enum TrieNodeLike {

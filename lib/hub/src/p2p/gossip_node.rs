@@ -1,5 +1,6 @@
 use std::{net::TcpListener, str::FromStr};
 
+use crate::hub::AddrInfo;
 use libp2p::{
     core::upgrade,
     futures::{
@@ -12,20 +13,16 @@ use libp2p::{
     Multiaddr, PeerId, Swarm, Transport,
 };
 use prost::Message;
+use teleport_common::{
+    errors::{BadRequestType, HubError},
+    protobufs::generated::{
+        self,
+        gossip_message::{self},
+        ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
+    },
+};
 use tokio::spawn;
 use void::Void;
-
-use crate::{
-    common::{
-        errors::{BadRequestType, HubError},
-        protobufs::generated::{
-            self,
-            gossip_message::{self},
-            ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
-        },
-    },
-    hub::AddrInfo,
-};
 
 use super::{
     event_loop::{EventLoop, EventLoopState},

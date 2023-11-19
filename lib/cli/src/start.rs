@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-
 use clap::Parser;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";

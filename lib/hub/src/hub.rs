@@ -1,9 +1,9 @@
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
+use teleport_common::protobufs::generated::*;
 
-use crate::{
-    common::protobufs::generated::*,
-    network::p2p::{event_loop::Command, gossip_node::GossipNode},
-    storage::db::rocksdb::RocksDB,
+use crate::{    
+    p2p::{event_loop::Command, gossip_node::GossipNode},
+    storage::Store,
 };
 
 enum HubSubmitSource {
@@ -84,7 +84,7 @@ pub struct Hub {
     command_sender: mpsc::Sender<Command>,
     // TODO: rpc_server: Server,
     // TODO: admin_server
-    rocks_db: RocksDB,
+    rocks_db: Store,
     // TODO: Sync Engine
     // TODO: Job Schedulers
     // TODO: DB Engine
