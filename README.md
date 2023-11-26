@@ -40,11 +40,11 @@ In a recent update the Protobuf schema was updated to add a new field that allow
 1. create the database
 
 ```bash
-$ make db-create
+make db-create
 ```
 
-2. run the migrations
+1. run the migrations
 
 ```bash
-$ make db-migrate
+make db-migrate
 ```
