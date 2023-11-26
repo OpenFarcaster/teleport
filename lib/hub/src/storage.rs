@@ -25,8 +25,8 @@ pub fn get_db_path(name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use sqlx::migrate::MigrateDatabase;
     use super::*;
+    use sqlx::migrate::MigrateDatabase;
 
     #[test]
     fn test_get_db_path() {

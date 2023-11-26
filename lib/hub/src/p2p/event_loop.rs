@@ -4,6 +4,7 @@ use std::time::Duration;
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 use libp2p::futures::channel::oneshot;
 use libp2p::futures::StreamExt;
+use libp2p::gossipsub;
 use libp2p::gossipsub::IdentTopic;
 use libp2p::swarm::derive_prelude::Either;
 use libp2p::swarm::SwarmEvent;
@@ -182,76 +183,100 @@ impl EventLoop {
         }
     }
 
+    fn peer_discovery_response(&mut self, message_data: Vec<u8>) {
+        let local_external_addrs: Vec<String> = self
+            .swarm
+            .external_addresses()
+            .map(|a| a.to_string())
+            .collect();
+
+        let decoded_peer =
+            super::gossip_node::Peer::decode(libp2p::bytes::Bytes::from(message_data.clone()))
+                .unwrap();
+
+        for addr in decoded_peer.addrs {
+            let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
+
+            // Do not connect to self
+            if local_external_addrs.contains(&multi_addr.to_string()) {
+                continue;
+            }
+
+            // TODO: Do not connect to addresses we have already connected to
+
+            println!("Dialing pubsub peer disc {:?}", multi_addr);
+            self.dial_multi_addr(multi_addr).unwrap();
+        }
+    }
+
+    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) {
+        match event {
+            gossipsub::Event::Message {
+                propagation_source,
+                message_id,
+                message,
+            } => {
+                println!("Message Id {:?}, from {:?}", message_id, propagation_source);
+                let raw_data = message.data.clone();
+                let decoded_message = generated::GossipMessage::decode(raw_data.as_ref()).unwrap();
+
+                // Handle pubsub peer discovery event
+                if message.topic.to_string() == self.state.peer_discovery_topic.to_string() {
+                    println!("Message topic: {:?}", message.topic.to_string());
+                    self.peer_discovery_response(message.data);
+                    return;
+                }
+
+                if message.topic.to_string() == self.state.contact_info_topic.to_string() {
+                    println!("Message topic: {:?}", message.topic.to_string());
+                    if let Some(generated::gossip_message::Content::ContactInfoContent(data)) =
+                        decoded_message.content
+                    {
+                        // todo: broadcast to all peers
+                        println!("Contact Info: {:?}", data);
+                        return;
+                    }
+                }
+
+                if message.topic.to_string() == self.state.primary_topic.to_string() {
+                    println!("Message topic: {:?}", message.topic.to_string());
+                    // Handle other events
+                    if let Some(generated::gossip_message::Content::Message(data)) =
+                        decoded_message.content
+                    {
+                        // todo: validate message, store in db, broadcast to all peers
+                        println!("Primary Message: {:?}", data);
+                        return;
+                    }
+                }
+            }
+            gossipsub::Event::Subscribed { peer_id, topic } => {
+                println!("Subscribed: {:?}", (peer_id, topic))
+            }
+            gossipsub::Event::Unsubscribed { peer_id, topic } => {
+                println!("Unsubscribed: {:?}", (peer_id, topic))
+            }
+            gossipsub::Event::GossipsubNotSupported { peer_id } => {
+                println!("GossipsubNotSupported: {:?}", (peer_id))
+            }
+        }
+    }
+
+    fn handle_behaviour_event(&mut self, event: GossipBehaviourEvent) {
+        match event {
+            GossipBehaviourEvent::Gossipsub(gossipsub_event) => {
+                self.handle_gossipsub_event(gossipsub_event)
+            }
+            GossipBehaviourEvent::Identify(_) => println!("Identify"),
+            GossipBehaviourEvent::Ping(_) => println!("Ping"),
+            GossipBehaviourEvent::BlockedPeer => println!("BlockedPeer"),
+        }
+    }
+
     fn handle_event(&mut self, event: GossipNodeSwarmEvent) {
         match event {
             SwarmEvent::Behaviour(behaviour_event) => {
-                match behaviour_event {
-                    GossipBehaviourEvent::Gossipsub(gossipsub_event) => match gossipsub_event {
-                        libp2p::gossipsub::Event::Message {
-                            propagation_source,
-                            message_id,
-                            message,
-                        } => {
-                            // Handle pubsub peer discovery event
-                            if message.topic.to_string()
-                                == self.state.peer_discovery_topic.to_string()
-                            {
-                                let local_external_addrs: Vec<String> = self
-                                    .swarm
-                                    .external_addresses()
-                                    .map(|a| a.to_string())
-                                    .collect();
-
-                                let decoded_peer = super::gossip_node::Peer::decode(
-                                    libp2p::bytes::Bytes::from(message.data.clone()),
-                                )
-                                .unwrap();
-
-                                for addr in decoded_peer.addrs {
-                                    let multi_addr = libp2p::Multiaddr::try_from(addr).unwrap();
-
-                                    // Do not connect to self
-                                    if local_external_addrs.contains(&multi_addr.to_string()) {
-                                        continue;
-                                    }
-
-                                    // TODO: Do not connect to addresses we have already connected to
-
-                                    println!("Dialing pubsub peer disc {:?}", multi_addr);
-                                    self.dial_multi_addr(multi_addr).unwrap();
-                                }
-                                return;
-                            }
-
-                            // Handle other events
-
-                            let raw_data = message.data;
-                            let decoded_message =
-                                generated::GossipMessage::decode(raw_data.as_ref()).unwrap();
-
-                            match decoded_message.content {
-                                Some(generated::gossip_message::Content::Message(data)) => {
-                                    // println!("Message: {:?}", data);
-                                }
-                                _ => {
-                                    println!("Unknown content {:?}", decoded_message.content);
-                                }
-                            }
-                        }
-                        libp2p::gossipsub::Event::Subscribed { peer_id, topic } => {
-                            println!("Subscribed: {:?}", (peer_id, topic))
-                        }
-                        libp2p::gossipsub::Event::Unsubscribed { peer_id, topic } => {
-                            println!("Unsubscribed: {:?}", (peer_id, topic))
-                        }
-                        libp2p::gossipsub::Event::GossipsubNotSupported { peer_id } => {
-                            println!("GossipsubNotSupported: {:?}", (peer_id))
-                        }
-                    },
-                    GossipBehaviourEvent::Identify(_) => println!("Identify"),
-                    GossipBehaviourEvent::Ping(_) => println!("Ping"),
-                    GossipBehaviourEvent::BlockedPeer => println!("BlockedPeer"),
-                }
+                self.handle_behaviour_event(behaviour_event);
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id,
