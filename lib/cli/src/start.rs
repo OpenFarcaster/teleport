@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use clap::Parser;
+use std::path::PathBuf;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";
 const DEFAULT_PEER_ID_DIR: &str = "./.hub";

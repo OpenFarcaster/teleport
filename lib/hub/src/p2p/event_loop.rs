@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
-use teleport_common::errors::{BadRequestType, HubError, UnavailableType};
-use teleport_common::protobufs::{self, generated};
 use libp2p::futures::channel::oneshot;
 use libp2p::futures::StreamExt;
 use libp2p::gossipsub::IdentTopic;
@@ -12,6 +10,8 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{futures::channel::mpsc, Swarm};
 use libp2p::{Multiaddr, PeerId};
 use prost::Message;
+use teleport_common::errors::{BadRequestType, HubError, UnavailableType};
+use teleport_common::protobufs::{self, generated};
 use tokio::time::{interval, Interval};
 use void::Void;
 
@@ -267,42 +267,56 @@ impl EventLoop {
                 endpoint,
                 num_established,
                 cause,
-            } => println!("Connection closed: {:?}", (peer_id, connection_id)),
+            } => {
+                println!("Connection closed: {:?}", (peer_id, connection_id))
+            }
             SwarmEvent::IncomingConnection {
                 connection_id,
                 local_addr,
                 send_back_addr,
-            } => println!("Incoming connection: {:?}", (connection_id, local_addr)),
+            } => {
+                println!("Incoming connection: {:?}", (connection_id, local_addr))
+            }
             SwarmEvent::IncomingConnectionError {
                 connection_id,
                 local_addr,
                 send_back_addr,
                 error,
-            } => println!(
-                "Incoming connection error: {:?}",
-                (connection_id, local_addr, error.to_string())
-            ),
+            } => {
+                println!(
+                    "Incoming connection error: {:?}",
+                    (connection_id, local_addr, error.to_string())
+                )
+            }
             SwarmEvent::OutgoingConnectionError {
                 connection_id,
                 peer_id,
                 error,
-            } => println!(
-                "Outgoing connection error: {:?}",
-                (connection_id, peer_id, error)
-            ),
+            } => {
+                println!(
+                    "Outgoing connection error: {:?}",
+                    (connection_id, peer_id, error)
+                )
+            }
             SwarmEvent::NewListenAddr {
                 listener_id,
                 address,
-            } => println!("New listen addr: {:?}", (listener_id, address)),
+            } => {
+                println!("New listen addr: {:?}", (listener_id, address))
+            }
             SwarmEvent::ExpiredListenAddr {
                 listener_id,
                 address,
-            } => println!("Expired listen addr: {:?}", (listener_id, address)),
+            } => {
+                println!("Expired listen addr: {:?}", (listener_id, address))
+            }
             SwarmEvent::ListenerClosed {
                 listener_id,
                 addresses,
                 reason,
-            } => println!("Listener closed: {:?}", (listener_id, addresses, reason)),
+            } => {
+                println!("Listener closed: {:?}", (listener_id, addresses, reason))
+            }
             SwarmEvent::ListenerError { listener_id, error } => {
                 println!("Listener error: {:?}", (listener_id, error))
             }

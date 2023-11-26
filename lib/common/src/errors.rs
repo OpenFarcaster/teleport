@@ -24,9 +24,7 @@ pub enum HubError {
     Unauthenticated(String),
     #[error("the authenticated request did not have the authority to perform this action {0:#?}")]
     Unauthorized(String),
-    #[error(
-        "the request cannot be completed as constructed, do not retry (Type: {0:?}, Message: {1:#?})"
-    )]
+    #[error("the request cannot be completed as constructed, do not retry (Type: {0:?}, Message: {1:#?})")]
     BadRequest(BadRequestType, String),
     #[error("the requested resource could not be found {0:#?}")]
     NotFound(String),
