@@ -2,13 +2,13 @@ use sqlx::sqlite::SqlitePool;
 use sqlx::Row;
 use teleport_common::errors::HubError;
 
-pub const DB_DIRECTORY: &str = "./.store";
+pub const DB_DIRECTORY: &str = ".";
 pub const MAX_DB_ITERATOR_OPEN_MS: u64 = 60 * 1000;
 
 const DB_NAME_DEFAULT: &str = "farcaster";
 
 pub struct Store {
-    conn: SqlitePool,
+    pub conn: SqlitePool,
     name: String,
 }
 
@@ -19,20 +19,18 @@ impl Store {
     }
 }
 
-fn get_db_path(name: &str) -> String {
+pub fn get_db_path(name: &str) -> String {
     format!("sqlite:{}/{}", DB_DIRECTORY, name)
 }
 
 #[cfg(test)]
 mod tests {
     use sqlx::migrate::MigrateDatabase;
-
     use super::*;
-    use std::fs;
 
     #[test]
     fn test_get_db_path() {
-        assert_eq!(get_db_path("test"), ".store/test");
+        assert_eq!(get_db_path("farcaster.db"), "sqlite:./farcaster.db");
     }
 
     #[tokio::test]
@@ -42,7 +40,6 @@ mod tests {
         let db_name = format!("sqlite:{}", db_path.to_str().unwrap());
         sqlx::Sqlite::create_database(&db_name).await.unwrap();
 
-        println!("db_name: {}", db_name);
         let store = Store::new(db_name).await;
         let mut conn = store.conn.acquire().await.unwrap();
         let test_query = r#"CREATE TABLE IF NOT EXISTS test (
