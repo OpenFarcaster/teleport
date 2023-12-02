@@ -25,6 +25,10 @@ env_logger = { workspace = true }
 hex = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
+ethers = { workspace = true }
+thiserror = { workspace = true }
+once_cell = { workspace = true }
+chrono = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.2.0"

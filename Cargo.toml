@@ -41,6 +41,12 @@ chrono = "0.4.26"
 clap = { version = "4.4.4", features = ["derive", "env"] }
 tokio-stream = "0.1.14"
 log = "0.4.20"
+secp256k1 = { version = "0.28.0", features = ["recovery"] }
+ethers = { git = "https://github.com/gakonst/ethers-rs.git" }
+once_cell = "1.18.0"
+ed25519-dalek = "2.1.0"
+rand = "0.8.4"
+
 
 [profile.release]
 codegen-units = 1

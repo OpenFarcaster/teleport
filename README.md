@@ -48,3 +48,9 @@ make db-create
 ```bash
 make db-migrate
 ```
+
+## Start the Hub
+
+```bash
+FARCASTER_PRIV_KEY=<YOUR_PRIVATE_KEY> cargo run
+```

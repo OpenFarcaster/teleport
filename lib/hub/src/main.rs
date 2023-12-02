@@ -7,14 +7,11 @@ use sqlx::Row;
 
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
 use teleport_common::protobufs::generated::{cast_add_body, CastId, FarcasterNetwork, PeerIdProto};
-use teleport_common::time::get_farcaster_time;
-use teleport_common::{
-    crypto::blake3::blake3_20,
-    protobufs::{
-        self,
-        generated::{HashScheme, SignatureScheme},
-    },
+use teleport_common::protobufs::{
+    self,
+    generated::{HashScheme, SignatureScheme},
 };
+use teleport_common::time::get_farcaster_time;
 //use crate::{HubOptions};
 use std::fs::{self, canonicalize};
 use std::path::PathBuf;
