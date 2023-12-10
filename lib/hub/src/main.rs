@@ -2,8 +2,9 @@ pub mod hub;
 pub mod p2p;
 pub mod storage;
 pub mod sync;
+pub mod validation;
 
-use sqlx::Row;
+use ethers::providers::Middleware;
 
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
 use teleport_common::protobufs::generated::{cast_add_body, CastId, FarcasterNetwork, PeerIdProto};
@@ -25,6 +26,8 @@ use log::info;
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
+use teleport_eth::IdRegistryListener;
+use teleport_storage;
 use tonic::transport::Server;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";
@@ -35,14 +38,29 @@ async fn main() {
     env_logger::init();
 
     // run database migrations
-    let db_path = crate::storage::get_db_path("farcaster.db");
-    let store = crate::storage::Store::new(db_path).await;
+    let db_path = teleport_storage::get_db_path("farcaster.db");
+    let store = teleport_storage::Store::new(db_path).await;
 
     log::info!("Running database migrations...");
-    sqlx::migrate!("./migrations")
+    sqlx::migrate!("../storage/migrations")
         .run(&store.conn)
         .await
         .unwrap();
+
+    let s = store.clone();
+
+    let eth_rpc_url = std::env::var("OPTIMISM_L2_RPC_URL").unwrap();
+    let id_registry_address = "0x00000000fcaf86937e41ba038b4fa40baa4b780a".to_string();
+    let abi_path = "./lib/eth/abis/IdRegistry.json".to_string();
+    let reg_listener =
+        IdRegistryListener::new(eth_rpc_url, store, id_registry_address, abi_path).unwrap();
+
+    // Fill in all registeration events before starting the libp2p node
+    tokio::task::spawn(async move {
+        reg_listener.sync().await.unwrap();
+    })
+    .await
+    .unwrap();
 
     let priv_key_hex = std::env::var("FARCASTER_PRIV_KEY").unwrap();
     let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");
@@ -66,19 +84,13 @@ async fn main() {
             .with_keypair(id_keypair)
             .with_bootstrap_addrs(bootstrap_nodes);
 
-    let mut gossip_node = p2p::gossip_node::GossipNode::new(node_options);
+    let mut gossip_node = p2p::gossip_node::GossipNode::new(node_options, s);
 
-    gossip_node.start().await;
+    gossip_node.start().await.unwrap();
 
-    tokio::time::sleep(std::time::Duration::from_secs(0)).await;
+    // tokio::time::sleep(std::time::Duration::from_secs(0)).await;
 
     let state = gossip_node.get_state().await.unwrap();
-    let gossip_addr_info = protobufs::generated::GossipAddressInfo {
-        address: state.external_addrs[0].to_string(),
-        family: 4,
-        port: 2282,
-        dns_name: "".to_string(),
-    };
 
     tokio::time::sleep(std::time::Duration::from_secs(150)).await;
 

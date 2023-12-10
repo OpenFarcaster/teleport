@@ -1,5 +1,5 @@
 DATABASE_URL = "sqlite:farcaster.db"
-MIGRATIONS_DIR = "./lib/hub/migrations"
+MIGRATIONS_DIR = "./lib/storage/migrations"
 
 db-create:
 	DATABASE_URL=$(DATABASE_URL) sqlx db create

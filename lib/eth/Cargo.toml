@@ -1,0 +1,25 @@
+[package]
+authors = { workspace = true }
+description = "ETH interaction for Teleport"
+edition = { workspace = true }
+name = "teleport_eth"
+homepage = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+tonic = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+ethers = { workspace = true }
+serde_json = { workspace = true }
+teleport_storage = { path = "../storage" }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+
+[build-dependencies]
+ethers = { workspace = true }

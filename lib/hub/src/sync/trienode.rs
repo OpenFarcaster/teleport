@@ -1,5 +1,5 @@
-use crate::storage::Store;
 use std::collections::HashMap;
+use teleport_storage::Store;
 
 enum TrieNodeLike {
     Serialized(SerializedTrieNode),

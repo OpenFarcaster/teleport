@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use crate::validation::Validator;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -14,7 +14,7 @@ use libp2p::{Multiaddr, PeerId};
 use prost::Message;
 use teleport_common::errors::{BadRequestType, HubError, UnavailableType};
 use teleport_common::protobufs::{self, generated};
-use teleport_common::{blake3, ed25519};
+use teleport_storage::Store;
 use tokio::time::{interval, Interval};
 use void::Void;
 
@@ -50,6 +50,7 @@ pub struct EventLoopState {
     pub contact_info_topic: IdentTopic,
     pub peer_discovery_topic: IdentTopic,
     pub bootstrap_addrs: Vec<Multiaddr>,
+    pub db: Option<Store>,
 }
 
 pub struct EventLoop {
@@ -88,6 +89,7 @@ impl EventLoop {
             contact_info_topic,
             peer_discovery_topic,
             bootstrap_addrs: vec![],
+            db: None,
         };
 
         EventLoop {
@@ -129,27 +131,32 @@ impl EventLoop {
         self
     }
 
+    pub fn with_db(mut self, db: Store) -> Self {
+        self.state.db = Some(db);
+        self
+    }
+
     pub async fn run(&mut self) {
         let peer_discovery_interval = interval(Duration::from_secs(10));
         let periodic_peer_check_interval = interval(Duration::from_secs(4 * 60 * 60));
 
-        let _ = self
-            .swarm
+        self.swarm
             .behaviour_mut()
             .gossipsub
-            .subscribe(&self.state.peer_discovery_topic);
+            .subscribe(&self.state.peer_discovery_topic)
+            .unwrap();
 
-        let _ = self
-            .swarm
+        self.swarm
             .behaviour_mut()
             .gossipsub
-            .subscribe(&self.state.primary_topic);
+            .subscribe(&self.state.primary_topic)
+            .unwrap();
 
-        let _ = self
-            .swarm
+        self.swarm
             .behaviour_mut()
             .gossipsub
-            .subscribe(&self.state.contact_info_topic);
+            .subscribe(&self.state.contact_info_topic)
+            .unwrap();
 
         self.state.is_listening = true;
         self.state
@@ -166,7 +173,7 @@ impl EventLoop {
 
         loop {
             tokio::select! {
-                event = self.swarm.next() => self.handle_event(event.expect("Failed to handle event")),
+                event = self.swarm.next() => self.handle_event(event.expect("Failed to handle event")).await,
                 command = self.command_receiver.next() => match command {
                     Some(command) => self.handle_command(command),
                     None => return,
@@ -211,124 +218,7 @@ impl EventLoop {
         }
     }
 
-    fn validate_msg_body(&self, msg: &generated::Message) -> Result<(), HubError> {
-        let msg_data = msg.data.as_ref().unwrap();
-        let body = msg_data.body.as_ref().unwrap();
-        match body {
-            generated::message_data::Body::CastAddBody(cast) => {
-                println!("==>>> Cast Add: {:?}", cast);
-            }
-            generated::message_data::Body::CastRemoveBody(cast) => {
-                println!("===>> Cast Remove: {:?}", cast);
-            }
-            generated::message_data::Body::VerificationRemoveBody(verification) => {
-                println!("===>> Verification Remove: {:?}", verification);
-            }
-            generated::message_data::Body::VerificationAddEthAddressBody(verification) => {
-                println!("===>> Verification Add Eth Address: {:?}", verification);
-            }
-            generated::message_data::Body::UsernameProofBody(proof) => {
-                println!("===>> Username Proof: {:?}", proof);
-            }
-            generated::message_data::Body::UserDataBody(user_data) => {
-                println!("===>> User Data: {:?}", user_data);
-            }
-            generated::message_data::Body::LinkBody(link) => {
-                println!("===>> Link: {:?}", link);
-            }
-            generated::message_data::Body::ReactionBody(reaction) => {
-                println!("===>> Reaction: {:?}", reaction);
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_signature(&self, message: &generated::Message) -> Result<(), HubError> {
-        let signature_scheme = generated::SignatureScheme::from_i32(message.signature_scheme)
-            .ok_or_else(|| {
-                HubError::Unknown(format!(
-                    "Unknown signature scheme: {:?}",
-                    message.signature_scheme
-                ))
-            })?;
-
-        match signature_scheme {
-            generated::SignatureScheme::Eip712 => {
-                // todo: validate EIP712 signatures
-                todo!();
-            }
-            generated::SignatureScheme::Ed25519 => {
-                let mut pub_key = [0; 32];
-                pub_key.copy_from_slice(&message.signer.as_slice()[0..32]);
-                let mut signature = [0; 64];
-                signature.copy_from_slice(&message.signature.as_slice()[0..64]);
-                match ed25519::verify_message_hash_signature(&signature, &message.hash, &pub_key) {
-                    Ok(_) => {
-                        return Ok(());
-                    }
-                    Err(err) => {
-                        return Err(HubError::Unknown(err.to_string()));
-                    }
-                }
-            }
-            _ => {
-                return Err(HubError::Unknown(format!(
-                    "Unknown signature scheme: {:?}",
-                    message.signature_scheme
-                )));
-            }
-        }
-    }
-
-    fn validate_hash(&self, message: &generated::Message) -> Result<(), HubError> {
-        if message.hash_scheme != generated::HashScheme::Blake3 as i32 {
-            return Err(HubError::Unknown(format!(
-                "Unknown hash scheme: {:?}",
-                message.hash_scheme
-            )));
-        }
-        let msg_hash;
-        if message.data_bytes.is_none() {
-            let data = message.data.as_ref().unwrap();
-            let mut encoded_message_data = Vec::new();
-            data.encode(&mut encoded_message_data).unwrap();
-            msg_hash = blake3::blake3_20(&encoded_message_data);
-        } else {
-            msg_hash = blake3::blake3_20(message.data_bytes.as_ref().unwrap());
-        }
-
-        if message.hash != msg_hash {
-            return Err(HubError::Unknown(format!(
-                "Invalid message hash: {:?}",
-                message.hash
-            )));
-        }
-
-        Ok(())
-    }
-
-    fn validate_message(&self, message: &generated::Message) -> Result<(), HubError> {
-        self.validate_hash(message)?;
-        // todo: check if the signer belongs to the user?
-        self.validate_signature(message)?;
-        self.validate_timestamp(message)?;
-        self.validate_msg_body(message)?;
-        Ok(())
-    }
-
-    fn validate_timestamp(&self, message: &generated::Message) -> Result<(), HubError> {
-        let timestamp = message.data.as_ref().unwrap().timestamp as i64;
-        let msg_datetime = DateTime::from_timestamp(timestamp, 0).unwrap();
-        if (msg_datetime - Utc::now()).num_seconds() > 600 {
-            return Err(HubError::Unknown(format!(
-                "Invalid timestamp: {:?}",
-                msg_datetime
-            )));
-        }
-        Ok(())
-    }
-
-    fn handle_gossipsub_event(&mut self, event: gossipsub::Event) {
+    async fn handle_gossipsub_event(&mut self, event: gossipsub::Event) {
         match event {
             gossipsub::Event::Message {
                 propagation_source,
@@ -352,6 +242,7 @@ impl EventLoop {
                         decoded_message.content
                     {
                         // todo: broadcast to all peers
+                        // todo: add peers in self.state.conected_peers
                         println!("Contact Info: {:?}", data.gossip_address);
                         return;
                     }
@@ -364,19 +255,10 @@ impl EventLoop {
                         decoded_message.content
                     {
                         // validate message
-                        match self.validate_message(&message) {
+                        let validator = Validator::new(&message);
+                        match validator.validate() {
                             Ok(_) => {
-                                let msg_data = message.data.unwrap();
-                                let ts = msg_data.timestamp;
-                                let fid = msg_data.fid;
-                                let r#type = msg_data.r#type;
-                                let hash = message.hash;
-                                let hash_scheme = message.hash_scheme;
-                                let signature_scheme = message.signature_scheme;
-                                let signature = message.signature;
-                                let signer = message.signer;
-                                let body = msg_data.body.clone().unwrap(); // convert to json
-                                let raw = message.data_bytes.unwrap();
+                                let db = self.state.db.as_mut().unwrap();
                             }
                             Err(err) => {
                                 println!("Failed to validate message: {:?}", err);
@@ -398,10 +280,10 @@ impl EventLoop {
         }
     }
 
-    fn handle_behaviour_event(&mut self, event: GossipBehaviourEvent) {
+    async fn handle_behaviour_event(&mut self, event: GossipBehaviourEvent) {
         match event {
             GossipBehaviourEvent::Gossipsub(gossipsub_event) => {
-                self.handle_gossipsub_event(gossipsub_event)
+                self.handle_gossipsub_event(gossipsub_event).await;
             }
             GossipBehaviourEvent::Identify(_) => println!("Identify"),
             GossipBehaviourEvent::Ping(_) => println!("Ping"),
@@ -409,10 +291,10 @@ impl EventLoop {
         }
     }
 
-    fn handle_event(&mut self, event: GossipNodeSwarmEvent) {
+    async fn handle_event(&mut self, event: GossipNodeSwarmEvent) {
         match event {
             SwarmEvent::Behaviour(behaviour_event) => {
-                self.handle_behaviour_event(behaviour_event);
+                self.handle_behaviour_event(behaviour_event).await;
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id,

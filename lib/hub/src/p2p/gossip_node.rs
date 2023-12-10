@@ -21,6 +21,7 @@ use teleport_common::{
         ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
     },
 };
+use teleport_storage::Store;
 use tokio::spawn;
 use void::Void;
 
@@ -108,12 +109,13 @@ pub(crate) struct GossipNode {
 }
 
 impl GossipNode {
-    pub fn new(options: NodeOptions) -> Self {
+    pub fn new(options: NodeOptions, db: Store) -> Self {
         let swarm = create_node(options.clone()).expect("Failed to create node");
         let (command_sender, command_receiver) = mpsc::channel(MAX_MESSAGE_QUEUE_SIZE);
 
         let event_loop = EventLoop::new(options.network, swarm, command_receiver)
-            .with_bootstrap_addrs(options.bootstrap_addrs.unwrap_or(vec![]));
+            .with_bootstrap_addrs(options.bootstrap_addrs.unwrap_or(vec![]))
+            .with_db(db);
 
         Self {
             command_sender,

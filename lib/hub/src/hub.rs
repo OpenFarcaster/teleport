@@ -1,10 +1,7 @@
+use crate::p2p::{event_loop::Command, gossip_node::GossipNode};
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use teleport_common::protobufs::generated::*;
-
-use crate::{
-    p2p::{event_loop::Command, gossip_node::GossipNode},
-    storage::Store,
-};
+use teleport_storage::Store;
 
 enum HubSubmitSource {
     Gossip,

@@ -1,8 +1,8 @@
 [package]
 authors = { workspace = true }
-description = "teleport hub"
+description = "teleport Storage"
 edition = { workspace = true }
-name = "teleport_hub"
+name = "teleport_storage"
 homepage = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
@@ -11,23 +11,16 @@ version = { workspace = true }
 
 [dependencies]
 teleport_common = { path = "../common" }
-teleport_rpc = { path = "../rpc" }
-teleport_cli = { path = "../cli" }
-teleport_storage = { path = "../storage" }
-teleport_eth = { path = "../eth" }
-libp2p = { workspace = true }
-clap = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
-void = { workspace = true }
-libp2p-mplex = { workspace = true }
 tonic = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
 hex = { workspace = true }
-serde_json = { workspace = true }
 sqlx = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
 ethers = { workspace = true }
-thiserror = { workspace = true }
-once_cell = { workspace = true }
-chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3.2.0"
