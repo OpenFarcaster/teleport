@@ -3,3 +3,4 @@
 expanded.rs
 *.db
 *.db-*
+.idea/
