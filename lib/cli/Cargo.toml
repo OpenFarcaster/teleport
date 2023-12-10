@@ -1,0 +1,13 @@
+[package]
+authors = { workspace = true }
+description = "CLI for teleport"
+edition = { workspace = true }
+name = "teleport_cli"
+homepage = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+clap = { workspace = true }
