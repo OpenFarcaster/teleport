@@ -52,5 +52,5 @@ make db-migrate
 ## Start the Hub
 
 ```bash
-FARCASTER_PRIV_KEY=<YOUR_PRIVATE_KEY> cargo run
+FARCASTER_PRIV_KEY=<YOUR_PRIVATE_KEY> OPTIMISM_L2_RPC_URL=<RPC_URL_FOR_OP> cargo run
 ```

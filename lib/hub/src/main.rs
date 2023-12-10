@@ -30,12 +30,14 @@ use tonic::transport::Server;
 const PEER_ID_FILENAME: &str = "id.protobuf";
 const DEFAULT_PEER_ID_FILENAME: &str = "default_id.protobuf";
 
+const DB_FILENAME: &str = "farcaster.db";
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
     // run database migrations
-    let db_path = teleport_storage::get_db_path("farcaster.db");
+    let db_path = teleport_storage::get_db_path(DB_FILENAME);
     let store = teleport_storage::Store::new(db_path).await;
 
     log::info!("Running database migrations...");
