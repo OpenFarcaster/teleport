@@ -21,6 +21,7 @@ sqlx = { workspace = true }
 uuid = { workspace = true }
 futures-util = { workspace = true }
 serde = { workspace = true }
+prost = { workspace = true }
 
 [build-dependencies]
 ethers = { workspace = true }

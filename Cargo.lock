@@ -5058,9 +5058,11 @@ version = "0.1.0"
 dependencies = [
  "ethers",
  "futures-util",
+ "prost",
  "serde",
  "serde_json",
  "sqlx",
+ "teleport_common",
  "teleport_storage",
  "tokio",
  "tokio-stream",
