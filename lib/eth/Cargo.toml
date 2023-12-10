@@ -10,6 +10,7 @@ repository = { workspace = true }
 version = { workspace = true }
 
 [dependencies]
+teleport_common = { path = "../common" }
 tonic = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

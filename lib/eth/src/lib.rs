@@ -1,3 +1,8 @@
+use std::error::Error;
+use std::fs::File;
+use std::io::BufReader;
+use std::sync::Arc;
+
 use ethers::{
     abi::Abi,
     contract::{Contract, EthEvent},
@@ -5,13 +10,10 @@ use ethers::{
     prelude::*,
     providers::{Http, Provider},
 };
-
 use serde_json;
 use serde_json::json;
-use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::Arc;
+
+use teleport_common::protobufs::generated::{IdRegisterEventType, OnChainEventType};
 use teleport_storage::db::{self};
 use teleport_storage::Store;
 
@@ -44,26 +46,12 @@ pub struct Recover {
     pub id: U256,
 }
 
-enum OnChainEventType {
-    EventTypeNone = 0,
-    EventTypeSigner = 1,
-    EventTypeSignerMigrated = 2,
-    EventTypeIDRegister = 3,
-    EventTypeStorageRent = 4,
-}
-
-enum SignerEventType {
-    None = 0,
-    Add = 1,
-    Remove = 2,
-    AdminReset = 3,
-}
-
-enum IDRegisterEventType {
-    None = 0,
-    Register = 1,
-    Transfer = 2,
-    ChangeRecovery = 3,
+#[derive(Debug, Clone, EthEvent)]
+pub struct ChangeRecoveryAddress {
+    #[ethevent(indexed)]
+    pub id: U256,
+    #[ethevent(indexed)]
+    pub recovery: Address,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +104,7 @@ impl IdRegistryListener {
             .to_block(end_block)
             .topic0(topic);
         let logs = self.provider.get_logs(&filter).await?;
+
         Ok(logs)
     }
 
@@ -132,7 +121,7 @@ impl IdRegistryListener {
             "to": event.to.to_string(),
             "id": event.id.as_u64(),
             "recovery": event.recovery.to_string(),
-            "eventType": IDRegisterEventType::Register as u64,
+            "eventType": IdRegisterEventType::Register as u64,
         });
 
         let event_row = db::ChainEventRow::new(
@@ -141,7 +130,7 @@ impl IdRegistryListener {
             log.block_number.unwrap().as_u64(),
             log.transaction_index.unwrap().as_u64(),
             log.log_index.unwrap().as_u64(),
-            OnChainEventType::EventTypeIDRegister as u64,
+            OnChainEventType::EventTypeIdRegister as u64,
             log.block_hash.unwrap().to_fixed_bytes(),
             log.transaction_hash.unwrap().to_string(),
             body.to_string(),
@@ -196,7 +185,7 @@ impl IdRegistryListener {
             "from": event.from.to_string(),
             "to": event.to.to_string(),
             "id": event.id.as_u64(),
-            "eventType": IDRegisterEventType::Transfer as u64,
+            "eventType": IdRegisterEventType::Transfer as u64,
         });
 
         let event_row = db::ChainEventRow::new(
@@ -205,7 +194,7 @@ impl IdRegistryListener {
             log.block_number.unwrap().as_u64(),
             log.transaction_index.unwrap().as_u64(),
             log.log_index.unwrap().as_u64(),
-            OnChainEventType::EventTypeIDRegister as u64,
+            OnChainEventType::EventTypeIdRegister as u64,
             log.block_hash.unwrap().to_fixed_bytes(),
             log.transaction_hash.unwrap().to_string(),
             body.to_string(),
@@ -258,7 +247,7 @@ impl IdRegistryListener {
             "from": event.from.to_string(),
             "to": event.to.to_string(),
             "id": event.id.as_u64(),
-            "eventType": IDRegisterEventType::ChangeRecovery as u64,
+            "eventType": IdRegisterEventType::ChangeRecovery as u64,
         });
 
         let event_row = db::ChainEventRow::new(
@@ -267,7 +256,7 @@ impl IdRegistryListener {
             log.block_number.unwrap().as_u64(),
             log.transaction_index.unwrap().as_u64(),
             log.log_index.unwrap().as_u64(),
-            OnChainEventType::EventTypeIDRegister as u64,
+            OnChainEventType::EventTypeIdRegister as u64,
             log.block_hash.unwrap().to_fixed_bytes(),
             log.transaction_hash.unwrap().to_string(),
             body.to_string(),
@@ -276,14 +265,66 @@ impl IdRegistryListener {
 
         event_row.insert(&self.store).await.unwrap();
 
-        db::FidRow::update_recovery_address(
-            &self.store,
+        db::FidRow::update_recovery_address(&self.store, fid, event.to.to_fixed_bytes())
+            .await
+            .unwrap();
+
+        Ok(())
+    }
+
+    pub async fn get_change_recovery_address_logs(
+        &self,
+        start_block: u64,
+        end_block: u64,
+    ) -> Result<Vec<Log>, Box<dyn Error>> {
+        let event_signature = "ChangeRecoveryAddress(uint256,address)";
+        let topic = H256::from_slice(&keccak256(event_signature));
+        let filter = Filter::new()
+            .address(self.contract.address())
+            .from_block(start_block)
+            .to_block(end_block)
+            .topic0(topic);
+        let logs = self.provider.get_logs(&filter).await?;
+
+        Ok(logs)
+    }
+
+    pub async fn persist_change_recovery_address_log(
+        &self,
+        log: Log,
+        chain_id: u64,
+    ) -> Result<(), Box<dyn Error>> {
+        let parsed_log: ChangeRecoveryAddress = parse_log(log.clone()).unwrap();
+
+        let event = ChangeRecoveryAddress {
+            id: parsed_log.id,
+            recovery: parsed_log.recovery,
+        };
+        let fid = event.id.as_u64();
+        let body = json!({
+            "id": event.id.as_u64(),
+            "recovery": event.recovery.to_string(),
+            "eventType": IdRegisterEventType::ChangeRecovery as u64,
+        });
+
+        let event_row = db::ChainEventRow::new(
             fid,
-            event.from.to_fixed_bytes(),
-            event.to.to_fixed_bytes(),
-        )
-        .await
-        .unwrap();
+            chain_id,
+            log.block_number.unwrap().as_u64(),
+            log.transaction_index.unwrap().as_u64(),
+            log.log_index.unwrap().as_u64(),
+            OnChainEventType::EventTypeIdRegister as u64,
+            log.block_hash.unwrap().to_fixed_bytes(),
+            log.transaction_hash.unwrap().to_string(),
+            body.to_string(),
+            log.data.to_vec(),
+        );
+
+        event_row.insert(&self.store).await.unwrap();
+
+        db::FidRow::update_recovery_address(&self.store, fid, event.recovery.to_fixed_bytes())
+            .await
+            .unwrap();
 
         Ok(())
     }
