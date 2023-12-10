@@ -4,15 +4,12 @@ pub mod storage;
 pub mod sync;
 pub mod validation;
 
-use ethers::providers::Middleware;
+
 
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
-use teleport_common::protobufs::generated::{cast_add_body, CastId, FarcasterNetwork, PeerIdProto};
-use teleport_common::protobufs::{
-    self,
-    generated::{HashScheme, SignatureScheme},
-};
-use teleport_common::time::get_farcaster_time;
+use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
+
+
 //use crate::{HubOptions};
 use std::fs::{self, canonicalize};
 use std::path::PathBuf;
@@ -90,7 +87,7 @@ async fn main() {
 
     // tokio::time::sleep(std::time::Duration::from_secs(0)).await;
 
-    let state = gossip_node.get_state().await.unwrap();
+    let _state = gossip_node.get_state().await.unwrap();
 
     tokio::time::sleep(std::time::Duration::from_secs(150)).await;
 
@@ -128,13 +125,13 @@ fn start(args: teleport_cli::start::StartCommand) {
 
     peer_id = PeerId::random();
 
-    let rpc_auth: String;
+    let _rpc_auth: String;
     if args.debugging_options.rpc_auth.is_some() {
     } else if std::env::var("RPC_AUTH").is_ok() {
     } else {
     }
 
-    let rpc_rate_limit: i32;
+    let _rpc_rate_limit: i32;
     if args.networking_options.rpc_rate_limit.is_some() {
     } else {
     }

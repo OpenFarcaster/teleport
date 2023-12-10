@@ -10,7 +10,7 @@ There are a few things Teleport is currently capable of, and a lot more it is no
 
 - [x] Start a libp2p gossip node and connect to other peers
 - [x] Broadcast Gossip Messages to enable features like posting casts
-- [-] Do pubsub peer discovery over gossipsub (partial support)
+- [-] Do PubSub peer discovery over GossipSub (partial support)
 
 A lot is still left to do:
 
@@ -27,7 +27,7 @@ Persistent Storage, handling received messages from peers, and historical data s
 
 - Rust
 - Protobufs Compiler (`brew install protobuf` or `apt install -y protobuf-compiler`)
-- RocksDB binaries ([Instructions here](https://github.com/facebook/rocksdb/blob/master/INSTALL.md))
+- SQLx CLI (`cargo install sqlx-cli`)
 
 ## Prost Patch
 

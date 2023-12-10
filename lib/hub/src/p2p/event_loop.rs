@@ -258,7 +258,7 @@ impl EventLoop {
                         let validator = Validator::new(&message);
                         match validator.validate() {
                             Ok(_) => {
-                                let db = self.state.db.as_mut().unwrap();
+                                let _db = self.state.db.as_mut().unwrap();
                             }
                             Err(err) => {
                                 println!("Failed to validate message: {:?}", err);
@@ -299,31 +299,31 @@ impl EventLoop {
             SwarmEvent::ConnectionEstablished {
                 peer_id,
                 connection_id,
-                endpoint,
-                num_established,
-                concurrent_dial_errors,
-                established_in,
+                endpoint: _,
+                num_established: _,
+                concurrent_dial_errors: _,
+                established_in: _,
             } => println!("Connection established: {:?}", (peer_id, connection_id)),
             SwarmEvent::ConnectionClosed {
                 peer_id,
                 connection_id,
-                endpoint,
-                num_established,
-                cause,
+                endpoint: _,
+                num_established: _,
+                cause: _,
             } => {
                 println!("Connection closed: {:?}", (peer_id, connection_id))
             }
             SwarmEvent::IncomingConnection {
                 connection_id,
                 local_addr,
-                send_back_addr,
+                send_back_addr: _,
             } => {
                 println!("Incoming connection: {:?}", (connection_id, local_addr))
             }
             SwarmEvent::IncomingConnectionError {
                 connection_id,
                 local_addr,
-                send_back_addr,
+                send_back_addr: _,
                 error,
             } => {
                 println!(
