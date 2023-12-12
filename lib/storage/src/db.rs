@@ -1,52 +1,53 @@
+use ethers::abi::AbiEncode;
 use sqlx::Row;
 use uuid::Uuid;
 
+use prost::Message;
+use teleport_common::protobufs::generated::on_chain_event::Body::*;
+use teleport_common::protobufs::generated::OnChainEvent;
+
 pub struct ChainEventRow {
     pub id: String,
-    pub block_timestamp: i64,
-    pub fid: i64,
-    pub chain_id: i64,
-    pub block_number: i64,
-    pub transaction_index: i64,
-    pub log_index: i64,
-    pub r#type: i64,
-    pub block_hash: [u8; 32],
+    pub block_timestamp: u64,
+    pub fid: u64,
+    pub chain_id: u32,
+    pub block_number: u32,
+    pub transaction_index: u32,
+    pub log_index: u32,
+    pub r#type: i32,
+    pub block_hash: Vec<u8>,
     pub transaction_hash: String,
-    pub body: String,
+    pub body: Vec<u8>,
     pub raw: Vec<u8>,
 }
 
 impl ChainEventRow {
-    pub fn new(
-        fid: u64,
-        chain_id: u64,
-        block_number: u64,
-        transaction_index: u64,
-        log_index: u64,
-        r#type: u64,
-        block_hash: [u8; 32],
-        transaction_hash: String,
-        body: String,
-        raw: Vec<u8>,
-    ) -> Self {
+    pub fn new(onchain_event: OnChainEvent, raw_event: Vec<u8>) -> Self {
         let id = Uuid::new_v4().to_string();
-        // TODO: there is no efficient way to get the timestamp from the block
-        // without fetching the block itself in another RPC call
-        let block_timestamp = 0;
 
-        ChainEventRow {
+        let serialized_body = match onchain_event.body {
+            Some(body) => match body {
+                SignerEventBody(event_body) => event_body.encode_to_vec(),
+                SignerMigratedEventBody(event_body) => event_body.encode_to_vec(),
+                IdRegisterEventBody(event_body) => event_body.encode_to_vec(),
+                StorageRentEventBody(event_body) => event_body.encode_to_vec(),
+            },
+            None => vec![],
+        };
+
+        Self {
             id,
-            fid: fid as i64,
-            block_timestamp,
-            block_number: block_number as i64,
-            block_hash,
-            chain_id: chain_id as i64,
-            transaction_index: transaction_index as i64,
-            transaction_hash,
-            log_index: log_index as i64,
-            r#type: r#type as i64,
-            body,
-            raw,
+            block_timestamp: onchain_event.block_timestamp,
+            fid: onchain_event.fid,
+            chain_id: onchain_event.chain_id,
+            block_number: onchain_event.block_number,
+            transaction_index: onchain_event.tx_index,
+            log_index: onchain_event.log_index,
+            r#type: onchain_event.r#type,
+            block_hash: onchain_event.block_hash,
+            transaction_hash: onchain_event.transaction_hash.encode_hex(),
+            body: serialized_body,
+            raw: raw_event,
         }
     }
 
@@ -70,8 +71,8 @@ impl ChainEventRow {
         ";
         sqlx::query(query)
             .bind(self.id.clone())
-            .bind(self.block_timestamp)
-            .bind(self.fid)
+            .bind(self.block_timestamp as i64)
+            .bind(self.fid as i64)
             .bind(self.chain_id)
             .bind(self.block_number)
             .bind(self.transaction_index)
@@ -129,13 +130,11 @@ impl FidRow {
     pub async fn update_recovery_address(
         store: &crate::Store,
         fid: u64,
-        from: [u8; 20],
         to: [u8; 20],
     ) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "update fids set recovery_address = ? where recovery_address = ? and fid = ?;";
+        let query = "update fids set recovery_address = ? where fid = ?;";
         sqlx::query(query)
-            .bind(from.as_slice())
             .bind(to.as_slice())
             .bind(fid as i64)
             .execute(&mut *conn)
@@ -146,13 +145,11 @@ impl FidRow {
     pub async fn update_custody_address(
         store: &crate::Store,
         fid: u64,
-        from: [u8; 20],
         to: [u8; 20],
     ) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "update fids set custody_address = ? where custody_address = ? and fid = ?;";
+        let query = "update fids set custody_address = ? where fid = ?;";
         sqlx::query(query)
-            .bind(from.as_slice())
             .bind(to.as_slice())
             .bind(fid as i64)
             .execute(&mut *conn)

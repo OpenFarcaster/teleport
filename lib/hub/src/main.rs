@@ -4,11 +4,9 @@ pub mod storage;
 pub mod sync;
 pub mod validation;
 
-
-
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
 use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
-
+use teleport_eth::key_registry_listener::KeyRegistryListener;
 
 //use crate::{HubOptions};
 use std::fs::{self, canonicalize};
@@ -23,7 +21,7 @@ use log::info;
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
-use teleport_eth::IdRegistryListener;
+use teleport_eth::id_registry_listener::IdRegistryListener;
 use teleport_storage;
 use tonic::transport::Server;
 
@@ -49,17 +47,38 @@ async fn main() {
     let s = store.clone();
 
     let eth_rpc_url = std::env::var("OPTIMISM_L2_RPC_URL").unwrap();
+
     let id_registry_address = "0x00000000fcaf86937e41ba038b4fa40baa4b780a".to_string();
-    let abi_path = "./lib/eth/abis/IdRegistry.json".to_string();
-    let reg_listener =
-        IdRegistryListener::new(eth_rpc_url, store, id_registry_address, abi_path).unwrap();
+    let id_registry_abi_path = "./lib/eth/abis/IdRegistry.json".to_string();
+
+    let key_registry_address = "0x00000000fC9e66f1c6d86D750B4af47fF0Cc343d".to_string();
+    let key_registry_abi_path = "./lib/eth/abis/KeyRegistry.json".to_string();
+
+    let reg_listener = IdRegistryListener::new(
+        eth_rpc_url.clone(),
+        store.clone(),
+        id_registry_address,
+        id_registry_abi_path,
+    )
+    .unwrap();
+
+    let key_listener = KeyRegistryListener::new(
+        eth_rpc_url.clone(),
+        store,
+        key_registry_address,
+        key_registry_abi_path,
+    )
+    .unwrap();
 
     // Fill in all registeration events before starting the libp2p node
-    tokio::task::spawn(async move {
+    let id_reg_handle = tokio::task::spawn(async move {
         reg_listener.sync().await.unwrap();
-    })
-    .await
-    .unwrap();
+    });
+    let key_reg_handle = tokio::task::spawn(async move {
+        key_listener.sync().await.unwrap();
+    });
+
+    let _ = tokio::join!(id_reg_handle, key_reg_handle);
 
     let priv_key_hex = std::env::var("FARCASTER_PRIV_KEY").unwrap();
     let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");

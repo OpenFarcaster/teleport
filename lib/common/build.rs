@@ -2,6 +2,8 @@ extern crate prost_build;
 use std::path::PathBuf;
 
 fn main() {
+    println!("cargo:rerun-if-changed=../../protobufs");
+
     let src = PathBuf::from("../../protobufs");
 
     tonic_build::configure()
