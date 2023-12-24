@@ -6,9 +6,11 @@ pub mod validation;
 
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
 use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
-use teleport_eth::key_registry_listener::KeyRegistryListener;
+use teleport_eth::id_registry::IdRegistry;
+use teleport_eth::key_registry::KeyRegistry;
+use teleport_eth::storage_registry::StorageRegistry;
+use teleport_eth::sync::Syncer;
 
-//use crate::{HubOptions};
 use std::fs::{self, canonicalize};
 use std::path::PathBuf;
 use std::process::exit;
@@ -21,7 +23,6 @@ use log::info;
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
-use teleport_eth::id_registry_listener::IdRegistryListener;
 use teleport_storage;
 use tonic::transport::Server;
 
@@ -44,8 +45,6 @@ async fn main() {
         .await
         .unwrap();
 
-    let s = store.clone();
-
     let eth_rpc_url = std::env::var("OPTIMISM_L2_RPC_URL").unwrap();
 
     let id_registry_address = "0x00000000fcaf86937e41ba038b4fa40baa4b780a".to_string();
@@ -54,7 +53,10 @@ async fn main() {
     let key_registry_address = "0x00000000fC9e66f1c6d86D750B4af47fF0Cc343d".to_string();
     let key_registry_abi_path = "./lib/eth/abis/KeyRegistry.json".to_string();
 
-    let reg_listener = IdRegistryListener::new(
+    let storage_registry_address = "0x00000000fcce7f938e7ae6d3c335bd6a1a7c593d".to_string();
+    let storage_registry_abi_path = "./lib/eth/abis/StorageRegistry.json".to_string();
+
+    let id_registry = IdRegistry::new(
         eth_rpc_url.clone(),
         store.clone(),
         id_registry_address,
@@ -62,23 +64,38 @@ async fn main() {
     )
     .unwrap();
 
-    let key_listener = KeyRegistryListener::new(
+    let key_registry = KeyRegistry::new(
         eth_rpc_url.clone(),
-        store,
+        store.clone(),
         key_registry_address,
         key_registry_abi_path,
     )
     .unwrap();
 
-    // Fill in all registeration events before starting the libp2p node
-    let id_reg_handle = tokio::task::spawn(async move {
-        reg_listener.sync().await.unwrap();
-    });
-    let key_reg_handle = tokio::task::spawn(async move {
-        key_listener.sync().await.unwrap();
-    });
+    let storage_registry = StorageRegistry::new(
+        eth_rpc_url.clone(),
+        store.clone(),
+        storage_registry_address,
+        storage_registry_abi_path,
+    )
+    .unwrap();
 
-    let _ = tokio::join!(id_reg_handle, key_reg_handle);
+    let mut syncer = Syncer::new(
+        eth_rpc_url.clone(),
+        store.clone(),
+        id_registry,
+        key_registry,
+        storage_registry,
+    )
+    .unwrap();
+
+    // Fill in all registeration events before starting the libp2p node
+    tokio::task::spawn(async move {
+        syncer.with_chain_id().await.unwrap();
+        syncer.sync().await.unwrap();
+    })
+    .await
+    .unwrap();
 
     let priv_key_hex = std::env::var("FARCASTER_PRIV_KEY").unwrap();
     let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");
@@ -102,7 +119,7 @@ async fn main() {
             .with_keypair(id_keypair)
             .with_bootstrap_addrs(bootstrap_nodes);
 
-    let mut gossip_node = p2p::gossip_node::GossipNode::new(node_options, s);
+    let mut gossip_node = p2p::gossip_node::GossipNode::new(node_options, store.clone());
 
     gossip_node.start().await.unwrap();
 

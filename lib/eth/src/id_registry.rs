@@ -1,22 +1,19 @@
-use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
-use std::sync::Arc;
-
 use ethers::{
-    abi::Abi,
-    contract::{Contract, EthEvent},
+    contract::{parse_log, Contract, ContractInstance, EthEvent},
     core::utils::keccak256,
-    prelude::*,
-    providers::{Http, Provider},
+    providers::{Http, Middleware, Provider},
+    types::{Address, Filter, Log, H256, U256},
 };
-use serde_json;
 
+use std::error::Error;
+use std::sync::Arc;
 use teleport_common::protobufs::generated::{
     on_chain_event, IdRegisterEventBody, IdRegisterEventType, OnChainEvent, OnChainEventType,
 };
 use teleport_storage::db::{self};
 use teleport_storage::Store;
+
+use crate::utils::read_abi;
 
 #[derive(Debug, Clone, EthEvent)]
 struct Register {
@@ -55,16 +52,13 @@ struct ChangeRecoveryAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct IdRegistryListener {
-    pub store: Store,
-    pub provider: Provider<Http>,
-    pub contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
+pub struct IdRegistry {
+    store: Store,
+    provider: Provider<Http>,
+    contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
 }
 
-// Is this right? IdRegistry seems to be deployed at 108869029u64
-const FARCASTER_START_BLOCK: u64 = 108864739u64;
-
-impl IdRegistryListener {
+impl IdRegistry {
     pub fn new(
         http_rpc_url: String,
         store: Store,
@@ -74,25 +68,18 @@ impl IdRegistryListener {
         let http_provider = Provider::<Http>::try_from(http_rpc_url)?
             .interval(std::time::Duration::from_millis(2000));
         let p = http_provider.clone();
-        let contract_abi = Self::read_abi(abi_path)?;
+        let contract_abi = read_abi(abi_path)?;
         let addr: Address = contract_addr.parse().unwrap();
         let contract = Contract::new(addr, contract_abi, Arc::new(http_provider));
 
-        Ok(IdRegistryListener {
+        Ok(IdRegistry {
             store,
             provider: p,
             contract,
         })
     }
 
-    fn read_abi(path: String) -> Result<Abi, Box<dyn Error>> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let contract_abi: Abi = serde_json::from_reader(reader)?;
-        Ok(contract_abi)
-    }
-
-    async fn get_register_logs(
+    pub async fn get_register_logs(
         &self,
         start_block: u64,
         end_block: u64,
@@ -109,7 +96,11 @@ impl IdRegistryListener {
         Ok(logs)
     }
 
-    async fn persist_register_log(&self, log: Log, chain_id: u32) -> Result<(), Box<dyn Error>> {
+    pub async fn persist_register_log(
+        &self,
+        log: Log,
+        chain_id: u32,
+    ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Register = parse_log(log.clone()).unwrap();
 
         let body = IdRegisterEventBody {
@@ -321,68 +312,6 @@ impl IdRegistryListener {
         .await
         .unwrap();
 
-        Ok(())
-    }
-
-    pub async fn sync(&self) -> Result<(), Box<dyn Error>> {
-        let max_block_num = db::ChainEventRow::max_block_number(&self.store)
-            .await
-            .unwrap_or(FARCASTER_START_BLOCK as i64);
-
-        let start_block_num = if max_block_num == 0 {
-            FARCASTER_START_BLOCK
-        } else {
-            max_block_num as u64 + 1
-        };
-
-        let chain_id = self.provider.get_chainid().await.unwrap();
-        let mut current_block_num = start_block_num;
-        let latest_block = self
-            .provider
-            .get_block(BlockNumber::Latest)
-            .await
-            .unwrap()
-            .unwrap();
-        let latest_block_number = latest_block.number.unwrap().as_u64();
-        println!(
-            "start block: {:?}, latest block : {:?}",
-            current_block_num, latest_block_number
-        );
-        while current_block_num <= latest_block_number {
-            // fetch logs in range [current_block_num, current_block_num + 1000]
-            let percent_complete = (current_block_num - start_block_num) as f64
-                / (latest_block_number - start_block_num) as f64;
-            println!(
-                "ID Registry Events: sync progress = {:.2}%",
-                percent_complete * 100.0
-            );
-            let start = current_block_num;
-            let end = current_block_num + 2000;
-
-            let register_logs = self.get_register_logs(start, end).await.unwrap();
-            for log in register_logs {
-                // persist the log
-                self.persist_register_log(log.clone(), chain_id.as_u64() as u32)
-                    .await
-                    .unwrap();
-            }
-
-            let transfer_logs = self.get_transfer_logs(start, end).await.unwrap();
-            for log in transfer_logs {
-                self.persist_transfer_log(log.clone(), chain_id.as_u64() as u32)
-                    .await
-                    .unwrap();
-            }
-
-            let recovery_logs = self.get_recovery_logs(start, end).await.unwrap();
-            for log in recovery_logs {
-                self.persist_recovery_log(log.clone(), chain_id.as_u64() as u32)
-                    .await
-                    .unwrap();
-            }
-
-            current_block_num = end + 1;
-        }
         Ok(())
     }
 }
