@@ -1,7 +1,7 @@
 use ethers::{
     contract::{parse_log, Contract, ContractInstance, EthEvent},
     core::utils::keccak256,
-    providers::{Http, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     types::{Address, Filter, Log, H256, U256},
 };
 
@@ -52,29 +52,26 @@ struct ChangeRecoveryAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct IdRegistry {
+pub struct IdRegistry<T> {
     store: Store,
-    provider: Provider<Http>,
-    contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
+    provider: Provider<T>,
+    contract: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
-impl IdRegistry {
+impl<T: JsonRpcClient + Clone> IdRegistry<T> {
     pub fn new(
-        http_rpc_url: String,
+        provider: Provider<T>,
         store: Store,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let http_provider = Provider::<Http>::try_from(http_rpc_url)?
-            .interval(std::time::Duration::from_millis(2000));
-        let p = http_provider.clone();
         let contract_abi = read_abi(abi_path)?;
         let addr: Address = contract_addr.parse().unwrap();
-        let contract = Contract::new(addr, contract_abi, Arc::new(http_provider));
+        let contract = Contract::new(addr, contract_abi, Arc::new(provider.clone()));
 
         Ok(IdRegistry {
             store,
-            provider: p,
+            provider,
             contract,
         })
     }
@@ -313,5 +310,48 @@ impl IdRegistry {
         .unwrap();
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethers::core::types::Bytes;
+    use ethers::core::types::Log;
+    use ethers::core::types::H160;
+    use hex::FromHex;
+    use std::str::FromStr;
+
+    #[tokio::test]
+    async fn test_get_register_logs() {
+        let store = Store::new("sqlite::memory:".to_string()).await;
+        let (provider, mock) = Provider::mocked();
+        mock.push(Log {
+            address: H160::from_str("0x0").unwrap(),
+            topics: vec![],
+            data: Bytes::from_hex("0x0").unwrap(),
+            block_hash: None,
+            block_number: None,
+            transaction_hash: None,
+            transaction_index: None,
+            log_index: None,
+            transaction_log_index: None,
+            log_type: None,
+            removed: None,
+        })
+        .expect("pushing mock log");
+
+        let id_registry = IdRegistry::new(
+            provider.clone(),
+            store.clone(),
+            "0x0".to_string(),
+            "abi.json".to_string(),
+        );
+        let logs = id_registry
+            .unwrap()
+            .get_register_logs(0, 100000000)
+            .await
+            .unwrap();
+        println!("{:?}", logs);
     }
 }

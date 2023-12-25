@@ -2,7 +2,7 @@ use crate::utils::read_abi;
 use ethers::{
     contract::{parse_log, Contract, ContractInstance, EthEvent},
     core::utils::keccak256,
-    providers::{Http, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     types::{Address, Filter, Log, H256, U256},
 };
 use std::error::Error;
@@ -37,29 +37,26 @@ struct SetDeprecationTimestamp {
 }
 
 #[derive(Debug, Clone)]
-pub struct StorageRegistry {
+pub struct StorageRegistry<T> {
     store: Store,
-    provider: Provider<Http>,
-    contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
+    provider: Provider<T>,
+    contract: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
-impl StorageRegistry {
+impl<T: JsonRpcClient + Clone> StorageRegistry<T> {
     pub fn new(
-        http_rpc_url: String,
+        provider: Provider<T>,
         store: Store,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let http_provider = Provider::<Http>::try_from(http_rpc_url)?
-            .interval(std::time::Duration::from_millis(2000));
-        let p = http_provider.clone();
         let contract_abi = read_abi(abi_path)?;
         let addr: Address = contract_addr.parse().unwrap();
-        let contract = Contract::new(addr, contract_abi, Arc::new(http_provider));
+        let contract = Contract::new(addr, contract_abi, Arc::new(provider.clone()));
 
         Ok(StorageRegistry {
             store,
-            provider: p,
+            provider,
             contract,
         })
     }

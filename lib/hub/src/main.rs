@@ -17,71 +17,96 @@ use std::process::exit;
 use std::str::FromStr;
 use teleport_rpc::server::HubServer;
 
+use dotenv::dotenv;
+use ethers::providers::Http;
+use ethers::providers::Provider;
 use libp2p::PeerId;
 use libp2p::{identity::ed25519, Multiaddr};
 use log::info;
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
+use serde::Deserialize;
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
 use teleport_storage;
 use tonic::transport::Server;
 
+use figment::{
+    providers::{Env, Format, Toml},
+    Figment,
+};
+use std::path::Path;
+
 const PEER_ID_FILENAME: &str = "id.protobuf";
 const DEFAULT_PEER_ID_FILENAME: &str = "default_id.protobuf";
 
-const DB_FILENAME: &str = "farcaster.db";
+#[derive(Deserialize)]
+struct Config {
+    farcaster_priv_key: String,
+    optimism_l2_rpc_url: String,
+    db_path: String,
+    db_migrations_path: String,
+    id_registry_address: String,
+    id_registry_abi_path: String,
+    key_registry_address: String,
+    key_registry_abi_path: String,
+    storage_registry_address: String,
+    storage_registry_abi_path: String,
+}
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
+    // Load env vars from .env file
+    dotenv().ok();
+
+    // Load configuration from a TOML file and override with environment variables
+    let config: Config = Figment::new()
+        .merge(Toml::file("Config.toml"))
+        .merge(Env::raw()) // Load all environment variables without any prefix
+        .extract()
+        .expect("configuration error");
+
     // run database migrations
-    let db_path = teleport_storage::get_db_path(DB_FILENAME);
-    let store = teleport_storage::Store::new(db_path).await;
+    let store = teleport_storage::Store::new(config.db_path).await;
 
     log::info!("Running database migrations...");
-    sqlx::migrate!("../storage/migrations")
-        .run(&store.conn)
+    let migrator = sqlx::migrate::Migrator::new(Path::new(&config.db_migrations_path))
         .await
         .unwrap();
+    migrator.run(&store.conn).await.unwrap();
 
-    let eth_rpc_url = std::env::var("OPTIMISM_L2_RPC_URL").unwrap();
+    let eth_rpc_url = config.optimism_l2_rpc_url.clone();
 
-    let id_registry_address = "0x00000000fcaf86937e41ba038b4fa40baa4b780a".to_string();
-    let id_registry_abi_path = "./lib/eth/abis/IdRegistry.json".to_string();
-
-    let key_registry_address = "0x00000000fC9e66f1c6d86D750B4af47fF0Cc343d".to_string();
-    let key_registry_abi_path = "./lib/eth/abis/KeyRegistry.json".to_string();
-
-    let storage_registry_address = "0x00000000fcce7f938e7ae6d3c335bd6a1a7c593d".to_string();
-    let storage_registry_abi_path = "./lib/eth/abis/StorageRegistry.json".to_string();
+    let http_provider =
+        Provider::<Http>::try_from(eth_rpc_url).expect("Cannot create HTTP provider");
 
     let id_registry = IdRegistry::new(
-        eth_rpc_url.clone(),
+        http_provider.clone(),
         store.clone(),
-        id_registry_address,
-        id_registry_abi_path,
+        config.id_registry_address,
+        config.id_registry_abi_path,
     )
     .unwrap();
 
     let key_registry = KeyRegistry::new(
-        eth_rpc_url.clone(),
+        http_provider.clone(),
         store.clone(),
-        key_registry_address,
-        key_registry_abi_path,
+        config.key_registry_address,
+        config.key_registry_abi_path,
     )
     .unwrap();
 
     let storage_registry = StorageRegistry::new(
-        eth_rpc_url.clone(),
+        http_provider.clone(),
         store.clone(),
-        storage_registry_address,
-        storage_registry_abi_path,
+        config.storage_registry_address,
+        config.storage_registry_abi_path,
     )
     .unwrap();
 
     let mut syncer = Syncer::new(
-        eth_rpc_url.clone(),
+        http_provider.clone(),
         store.clone(),
         id_registry,
         key_registry,
@@ -97,7 +122,7 @@ async fn main() {
     .await
     .unwrap();
 
-    let priv_key_hex = std::env::var("FARCASTER_PRIV_KEY").unwrap();
+    let priv_key_hex = config.farcaster_priv_key;
     let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");
     let secret_key = ed25519::SecretKey::try_from_bytes(&mut secret_key_bytes).unwrap();
     let keypair = ed25519::Keypair::from(secret_key);

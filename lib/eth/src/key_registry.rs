@@ -1,7 +1,7 @@
 use ethers::{
     contract::{parse_log, Contract, ContractInstance, EthEvent},
     core::utils::keccak256,
-    providers::{Http, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     types::{Address, Bytes, Filter, Log, H256, U256},
 };
 use log;
@@ -18,7 +18,6 @@ use teleport_storage::db::{self};
 use teleport_storage::Store;
 
 use alloy_dyn_abi::DynSolType;
-use alloy_primitives::{hex, serde_hex};
 
 use crate::utils::read_abi;
 
@@ -44,10 +43,10 @@ struct Migrated {
 }
 
 #[derive(Debug, Clone)]
-pub struct KeyRegistry {
+pub struct KeyRegistry<T> {
     store: Store,
-    provider: Provider<Http>,
-    contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
+    provider: Provider<T>,
+    contract: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,23 +57,20 @@ struct SignerRequestMetadata {
     pub deadline: u64,
 }
 
-impl KeyRegistry {
+impl<T: JsonRpcClient + Clone> KeyRegistry<T> {
     pub fn new(
-        http_rpc_url: String,
+        provider: Provider<T>,
         store: Store,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let http_provider = Provider::<Http>::try_from(http_rpc_url)?
-            .interval(std::time::Duration::from_millis(2000));
-        let p = http_provider.clone();
         let contract_abi = read_abi(abi_path)?;
         let addr: Address = contract_addr.parse().unwrap();
-        let contract = Contract::new(addr, contract_abi, Arc::new(http_provider));
+        let contract = Contract::new(addr, contract_abi, Arc::new(provider.clone()));
 
         Ok(KeyRegistry {
             store,
-            provider: p,
+            provider,
             contract,
         })
     }
@@ -154,7 +150,7 @@ impl KeyRegistry {
         assert!(key_bytes.len() == 32, "key is not 32 bytes long");
 
         let metadata_type = log.data[190]; // 190
-        let signer_request = KeyRegistry::decode_metadata(&log);
+        let signer_request = KeyRegistry::<T>::decode_metadata(&log);
         let metadata_json = serde_json::to_string(&signer_request).unwrap();
         let metadata = metadata_json.to_string().as_bytes().to_vec();
         let body = SignerEventBody {

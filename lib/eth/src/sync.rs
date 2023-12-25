@@ -1,36 +1,35 @@
 use std::error::Error;
 
 use ethers::{
-    providers::{Http, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     types::BlockNumber,
 };
 use teleport_storage::{db, Store};
 
 use crate::id_registry::IdRegistry;
+use crate::key_registry::KeyRegistry;
+use crate::storage_registry::StorageRegistry;
 
 // todo: Is this right? IdRegistry seems to be deployed at 108869029u64
 const FARCASTER_START_BLOCK: u64 = 108864739u64;
 
-pub struct Syncer {
+pub struct Syncer<T> {
     pub store: Store,
-    pub provider: Provider<Http>,
+    pub provider: Provider<T>,
     chain_id: Option<u64>,
-    id_registry: IdRegistry,
-    key_registry: crate::key_registry::KeyRegistry,
-    storage_registry: crate::storage_registry::StorageRegistry,
+    id_registry: IdRegistry<T>,
+    key_registry: KeyRegistry<T>,
+    storage_registry: StorageRegistry<T>,
 }
 
-impl Syncer {
+impl<T: JsonRpcClient + Clone> Syncer<T> {
     pub fn new(
-        http_rpc_url: String,
+        provider: Provider<T>,
         store: Store,
-        id_registry: IdRegistry,
-        key_registry: crate::key_registry::KeyRegistry,
-        storage_registry: crate::storage_registry::StorageRegistry,
+        id_registry: IdRegistry<T>,
+        key_registry: KeyRegistry<T>,
+        storage_registry: StorageRegistry<T>,
     ) -> Result<Self, Box<dyn Error>> {
-        let provider = Provider::<Http>::try_from(http_rpc_url)?
-            .interval(std::time::Duration::from_millis(2000));
-
         Ok(Syncer {
             store,
             provider,
