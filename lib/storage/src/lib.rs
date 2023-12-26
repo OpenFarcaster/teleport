@@ -8,14 +8,13 @@ pub const MAX_DB_ITERATOR_OPEN_MS: u64 = 60 * 1000;
 #[derive(Debug, Clone)]
 pub struct Store {
     pub conn: SqlitePool,
-    name: String,
 }
 
 impl Store {
     pub async fn new(name: String) -> Self {
         let conn = SqlitePool::connect(&name).await.unwrap();
 
-        Store { conn, name }
+        Store { conn }
     }
 }
 

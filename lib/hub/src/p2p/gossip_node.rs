@@ -9,7 +9,7 @@ use libp2p::{
     },
     gossipsub::{self, Message as GossipSubMessage, MessageAuthenticity, MessageId},
     identify, identity, noise, ping,
-    swarm::{SwarmBuilder},
+    swarm::SwarmBuilder,
     Multiaddr, PeerId, Swarm, Transport,
 };
 use prost::Message;
@@ -24,10 +24,9 @@ use teleport_common::{
 use teleport_storage::Store;
 use tokio::spawn;
 
-
 use super::{
     event_loop::{EventLoop, EventLoopState},
-    gossip_behaviour::{GossipBehaviour},
+    gossip_behaviour::GossipBehaviour,
 };
 
 const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";

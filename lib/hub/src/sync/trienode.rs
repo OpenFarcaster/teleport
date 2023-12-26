@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-
 enum TrieNodeLike {
     Serialized(SerializedTrieNode),
     Full(TrieNode),
