@@ -9,7 +9,7 @@ use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
 use teleport_eth::id_registry::IdRegistry;
 use teleport_eth::key_registry::KeyRegistry;
 use teleport_eth::storage_registry::StorageRegistry;
-use teleport_eth::sync::Syncer;
+use teleport_eth::indexer::Indexer;
 
 use std::fs::{self, canonicalize};
 use std::path::PathBuf;
@@ -105,7 +105,7 @@ async fn main() {
     )
     .unwrap();
 
-    let mut syncer = Syncer::new(
+    let mut indexer = Indexer::new(
         http_provider.clone(),
         store.clone(),
         id_registry,
@@ -116,8 +116,8 @@ async fn main() {
 
     // Fill in all registeration events before starting the libp2p node
     tokio::task::spawn(async move {
-        syncer.with_chain_id().await.unwrap();
-        syncer.sync().await.unwrap();
+        indexer.with_chain_id().await.unwrap();
+        indexer.sync().await.unwrap();
     })
     .await
     .unwrap();

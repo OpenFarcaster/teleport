@@ -13,7 +13,7 @@ use crate::storage_registry::StorageRegistry;
 // todo: Is this right? IdRegistry seems to be deployed at 108869029u64
 const FARCASTER_START_BLOCK: u64 = 108864739u64;
 
-pub struct Syncer<T> {
+pub struct Indexer<T> {
     pub store: Store,
     pub provider: Provider<T>,
     chain_id: Option<u64>,
@@ -22,7 +22,7 @@ pub struct Syncer<T> {
     storage_registry: StorageRegistry<T>,
 }
 
-impl<T: JsonRpcClient + Clone> Syncer<T> {
+impl<T: JsonRpcClient + Clone> Indexer<T> {
     pub fn new(
         provider: Provider<T>,
         store: Store,
@@ -30,7 +30,7 @@ impl<T: JsonRpcClient + Clone> Syncer<T> {
         key_registry: KeyRegistry<T>,
         storage_registry: StorageRegistry<T>,
     ) -> Result<Self, Box<dyn Error>> {
-        Ok(Syncer {
+        Ok(Indexer {
             store,
             provider,
             id_registry,
