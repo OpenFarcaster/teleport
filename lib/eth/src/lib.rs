@@ -1,5 +1,5 @@
-pub mod id_registry;
-pub mod key_registry;
-pub mod storage_registry;
+mod id_registry;
 pub mod indexer;
+mod key_registry;
+mod storage_registry;
 mod utils;

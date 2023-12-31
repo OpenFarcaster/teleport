@@ -4,53 +4,45 @@ pub mod storage;
 pub mod sync;
 pub mod validation;
 
-use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
-use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
-use teleport_eth::id_registry::IdRegistry;
-use teleport_eth::key_registry::KeyRegistry;
-use teleport_eth::storage_registry::StorageRegistry;
-use teleport_eth::indexer::Indexer;
-
-use std::fs::{self, canonicalize};
-use std::path::PathBuf;
-use std::process::exit;
-use std::str::FromStr;
-use teleport_rpc::server::HubServer;
-
 use dotenv::dotenv;
-use ethers::providers::Http;
-use ethers::providers::Provider;
-use libp2p::PeerId;
-use libp2p::{identity::ed25519, Multiaddr};
-use log::info;
-use p2p::gossip_node::NodeOptions;
-use prost::Message;
-use serde::Deserialize;
-use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
-use teleport_storage;
-use tonic::transport::Server;
-
+use ethers::prelude::{Http, Provider};
 use figment::{
     providers::{Env, Format, Toml},
     Figment,
 };
+use libp2p::PeerId;
+use libp2p::{identity::ed25519, Multiaddr};
+use log;
+use p2p::gossip_node::NodeOptions;
+use prost::Message;
+use serde::Deserialize;
+use std::fs::{self, canonicalize};
 use std::path::Path;
+use std::path::PathBuf;
+use std::process::exit;
+use std::str::FromStr;
+use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
+use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
+use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
+use teleport_eth::indexer::Indexer;
+use teleport_rpc::server::HubServer;
+use teleport_storage;
+use tonic::transport::Server;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";
 const DEFAULT_PEER_ID_FILENAME: &str = "default_id.protobuf";
 
-#[derive(Deserialize)]
+#[derive(Debug, PartialEq, Deserialize)]
 struct Config {
-    farcaster_priv_key: String,
-    optimism_l2_rpc_url: String,
     db_path: String,
     db_migrations_path: String,
+    farcaster_priv_key: String,
+    optimism_l2_rpc_url: String,
+    chain_id: u32,
     id_registry_address: String,
-    id_registry_abi_path: String,
     key_registry_address: String,
-    key_registry_abi_path: String,
     storage_registry_address: String,
-    storage_registry_abi_path: String,
+    abi_dir: String,
 }
 
 #[tokio::main]
@@ -63,7 +55,7 @@ async fn main() {
     // Load configuration from a TOML file and override with environment variables
     let config: Config = Figment::new()
         .merge(Toml::file("Config.toml"))
-        .merge(Env::raw()) // Load all environment variables without any prefix
+        .merge(Env::raw())
         .extract()
         .expect("configuration error");
 
@@ -76,54 +68,36 @@ async fn main() {
         .unwrap();
     migrator.run(&store.conn).await.unwrap();
 
-    let eth_rpc_url = config.optimism_l2_rpc_url.clone();
+    let provider = Provider::<Http>::try_from(config.optimism_l2_rpc_url).unwrap();
 
-    let http_provider =
-        Provider::<Http>::try_from(eth_rpc_url).expect("Cannot create HTTP provider");
-
-    let id_registry = IdRegistry::new(
-        http_provider.clone(),
+    let indexer = Indexer::new(
         store.clone(),
+        provider,
+        config.chain_id,
         config.id_registry_address,
-        config.id_registry_abi_path,
-    )
-    .unwrap();
-
-    let key_registry = KeyRegistry::new(
-        http_provider.clone(),
-        store.clone(),
         config.key_registry_address,
-        config.key_registry_abi_path,
-    )
-    .unwrap();
-
-    let storage_registry = StorageRegistry::new(
-        http_provider.clone(),
-        store.clone(),
         config.storage_registry_address,
-        config.storage_registry_abi_path,
+        config.abi_dir,
     )
     .unwrap();
 
-    let mut indexer = Indexer::new(
-        http_provider.clone(),
-        store.clone(),
-        id_registry,
-        key_registry,
-        storage_registry,
-    )
-    .unwrap();
+    // Fill in all registration events
+    // syncs upto `latest_block_number`.
+    // block until back filling is complete.
+    let latest_block_num = indexer.get_latest_block().await.unwrap();
+    let start_block_num = indexer.get_start_block().await;
+    indexer
+        .sync(start_block_num, latest_block_num)
+        .await
+        .unwrap();
 
-    // Fill in all registeration events before starting the libp2p node
-    tokio::task::spawn(async move {
-        indexer.with_chain_id().await.unwrap();
-        indexer.sync().await.unwrap();
-    })
-    .await
-    .unwrap();
+    // Subscribe to new events asynchronously
+    let subscribe_task = tokio::task::spawn(async move {
+        indexer.subscribe(latest_block_num + 1).await.unwrap();
+    });
 
-    let priv_key_hex = config.farcaster_priv_key;
-    let mut secret_key_bytes = hex::decode(priv_key_hex).expect("Invalid hex string");
+    let secret_key_hex = config.farcaster_priv_key;
+    let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");
     let secret_key = ed25519::SecretKey::try_from_bytes(&mut secret_key_bytes).unwrap();
     let keypair = ed25519::Keypair::from(secret_key);
     let pub_key = keypair.public();
@@ -171,10 +145,12 @@ async fn main() {
         .serve_with_shutdown(addr, shutdown)
         .await
         .unwrap();
+
+    subscribe_task.await.unwrap();
 }
 
 fn start(args: teleport_cli::start::StartCommand) {
-    info!("Teleport Starting...");
+    log::info!("Teleport Starting...");
 
     // TODO: Handle reading a TOML config file
 
@@ -259,7 +235,7 @@ fn start(args: teleport_cli::start::StartCommand) {
         hub_operator_fid: None,
     };
 
-    info!("Hub Options: {:#?}", hub_options);
+    log::info!("Hub Options: {:#?}", hub_options);
 }
 
 fn identity_create(args: teleport_cli::identity::create::CreateIdentityCommand) {
@@ -298,7 +274,7 @@ fn identity_verify(args: teleport_cli::identity::verify::VerifyIdentityCommand) 
     let peer_id_proto = PeerIdProto::decode(contents.as_slice()).unwrap();
     let peer_id = PeerId::from(&peer_id_proto);
 
-    info!(
+    log::info!(
         "Successfully read peer_id: {} from {}",
         peer_id.to_base58(),
         args.id
