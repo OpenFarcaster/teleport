@@ -92,9 +92,7 @@ async fn main() {
         .unwrap();
 
     // Subscribe to new events asynchronously
-    let subscribe_task = tokio::task::spawn(async move {
-        indexer.subscribe(latest_block_num + 1).await.unwrap();
-    });
+    let subscribe_task = indexer.subscribe(latest_block_num + 1);
 
     let secret_key_hex = config.farcaster_priv_key;
     let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");

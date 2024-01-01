@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO storage_allocations (\n    id,\n    rented_at,\n    expires_at,\n    chain_event_id,\n    fid,\n    units,\n    payer\n) \nVALUES (?, ?, ?, ?, ?, ?, ?);",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "25ab59595acb0863eabb99cb2043204d497869fe55b83402b10c0710270c6f93"
+}

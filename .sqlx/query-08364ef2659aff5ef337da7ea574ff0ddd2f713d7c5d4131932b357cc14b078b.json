@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT key_type, metadata FROM signers WHERE key = ?;",
+  "describe": {
+    "columns": [
+      {
+        "name": "key_type",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "metadata",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "08364ef2659aff5ef337da7ea574ff0ddd2f713d7c5d4131932b357cc14b078b"
+}

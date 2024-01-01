@@ -178,24 +178,22 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
         let event_id = event_row.insert(&store).await?;
 
-        // store keyBytes in db
+        // store signer in db
         let signer = db::SignerRow::new(
             fid,
             signer_request.request_fid,
             event_id,
             None,
-            key_type as i16,
-            metadata_type as i16,
+            key_type as i64,
+            metadata_type as i64,
             key_bytes.to_vec(),
             metadata_json.to_string(),
         );
         let result = signer.insert(&store).await;
-
-        match &result {
-            Err(sqlx::error::Error::Database(e)) if e.is_unique_violation() => {
-                println!("signer already exists, skipping");
-            }
-            _ => {
+        if let Err(sqlx::error::Error::Database(e)) = &result {
+            if e.is_unique_violation() {
+                log::warn!("signer already exists, skipping");
+            } else {
                 result?;
             }
         }
@@ -240,14 +238,12 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let key_bytes = log.data.chunks(32).last().unwrap();
 
         // get signer from db
-        let signer = db::SignerRow::get_by_key(&store, key_bytes.to_vec()).await?;
-        let key_type: u32 = signer.get("key_type");
-        let metadata: Vec<u8> = signer.get("metadata");
+        let (key_type, metadata) = db::SignerRow::get_by_key(&store, key_bytes.to_vec()).await?;
         let body = SignerEventBody {
             key: key_bytes.to_vec(),
-            key_type,
+            key_type: key_type as u32,
             event_type: SignerEventType::Remove.into(),
-            metadata,
+            metadata: metadata.into_bytes(),
             metadata_type: 1u32,
         };
 
@@ -315,16 +311,14 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let key_bytes = log.data.chunks(32).last().unwrap();
 
         // get signer from db
-        let signer = db::SignerRow::get_by_key(&store, key_bytes.to_vec()).await?;
-        let key_type: u32 = signer.get("key_type");
+        let (key_type, metadata) = db::SignerRow::get_by_key(&store, key_bytes.to_vec()).await?;
         assert_eq!(key_type, 1, "key type is not 1");
 
-        let metadata: Vec<u8> = signer.get("metadata");
         let body = SignerEventBody {
             key: key_bytes.to_vec(),
-            key_type,
+            key_type: key_type as u32,
             event_type: SignerEventType::AdminReset.into(),
-            metadata,
+            metadata: metadata.into_bytes(),
             metadata_type: 1u32,
         };
 
