@@ -1,10 +1,10 @@
+use crate::utils::read_abi;
 use ethers::{
-    contract::{parse_log, Contract, ContractInstance, EthEvent},
+    contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
     core::utils::keccak256,
-    providers::{Http, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     types::{Address, Filter, Log, H256, U256},
 };
-
 use std::error::Error;
 use std::sync::Arc;
 use teleport_common::protobufs::generated::{
@@ -12,8 +12,6 @@ use teleport_common::protobufs::generated::{
 };
 use teleport_storage::db::{self};
 use teleport_storage::Store;
-
-use crate::utils::read_abi;
 
 #[derive(Debug, Clone, EthEvent)]
 struct Register {
@@ -52,30 +50,24 @@ struct ChangeRecoveryAddress {
 }
 
 #[derive(Debug, Clone)]
-pub struct IdRegistry {
-    store: Store,
-    provider: Provider<Http>,
-    contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
+pub struct Contract<T> {
+    provider: Provider<T>,
+    inner: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
-impl IdRegistry {
+impl<T: JsonRpcClient + Clone> Contract<T> {
     pub fn new(
-        http_rpc_url: String,
-        store: Store,
+        provider: Provider<T>,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let http_provider = Provider::<Http>::try_from(http_rpc_url)?
-            .interval(std::time::Duration::from_millis(2000));
-        let p = http_provider.clone();
         let contract_abi = read_abi(abi_path)?;
-        let addr: Address = contract_addr.parse().unwrap();
-        let contract = Contract::new(addr, contract_abi, Arc::new(http_provider));
+        let addr: Address = contract_addr.parse()?;
+        let contract = EthContract::new(addr, contract_abi, Arc::new(provider.clone()));
 
-        Ok(IdRegistry {
-            store,
-            provider: p,
-            contract,
+        Ok(Contract {
+            provider,
+            inner: contract,
         })
     }
 
@@ -87,7 +79,7 @@ impl IdRegistry {
         let event_signature = "Register(address,uint256,address)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -98,10 +90,11 @@ impl IdRegistry {
 
     pub async fn persist_register_log(
         &self,
-        log: Log,
+        store: &Store,
+        log: &Log,
         chain_id: u32,
     ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: Register = parse_log(log.clone()).unwrap();
+        let parsed_log: Register = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
             to: parsed_log.to.to_fixed_bytes().to_vec(),
@@ -125,7 +118,7 @@ impl IdRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&self.store).await.unwrap();
+        event_row.insert(&store).await?;
 
         let fid_row = db::FidRow {
             fid: parsed_log.id.as_u64() as i64,
@@ -136,7 +129,8 @@ impl IdRegistry {
             custody_address: parsed_log.to.to_fixed_bytes(),
             recovery_address: parsed_log.recovery.to_fixed_bytes(),
         };
-        fid_row.insert(&self.store).await.unwrap();
+
+        fid_row.insert(&store).await?;
         Ok(())
     }
 
@@ -148,7 +142,7 @@ impl IdRegistry {
         let event_signature = "Transfer(address,address,uint256)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -158,7 +152,8 @@ impl IdRegistry {
 
     pub async fn persist_transfer_log(
         &self,
-        log: Log,
+        store: &Store,
+        log: &Log,
         chain_id: u32,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Transfer = parse_log(log.clone()).unwrap();
@@ -185,15 +180,14 @@ impl IdRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&self.store).await.unwrap();
+        event_row.insert(&store).await?;
 
         db::FidRow::update_custody_address(
-            &self.store,
+            &store,
             parsed_log.id.as_u64(),
             parsed_log.to.to_fixed_bytes(),
         )
-        .await
-        .unwrap();
+        .await?;
 
         Ok(())
     }
@@ -206,7 +200,7 @@ impl IdRegistry {
         let event_signature = "Recover(address,address,uint256)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -216,10 +210,11 @@ impl IdRegistry {
 
     pub async fn persist_recovery_log(
         &self,
-        log: Log,
+        store: &Store,
+        log: &Log,
         chain_id: u32,
     ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: Recover = parse_log(log.clone()).unwrap();
+        let parsed_log: Recover = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
             to: parsed_log.to.to_fixed_bytes().to_vec(),
@@ -243,15 +238,14 @@ impl IdRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&self.store).await.unwrap();
+        event_row.insert(&store).await?;
 
         db::FidRow::update_recovery_address(
-            &self.store,
+            &store,
             parsed_log.id.as_u64(),
             parsed_log.to.to_fixed_bytes(),
         )
-        .await
-        .unwrap();
+        .await?;
 
         Ok(())
     }
@@ -264,7 +258,7 @@ impl IdRegistry {
         let event_signature = "ChangeRecoveryAddress(uint256,address)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -275,10 +269,11 @@ impl IdRegistry {
 
     pub async fn persist_change_recovery_address_log(
         &self,
-        log: Log,
+        store: &Store,
+        log: &Log,
         chain_id: u32,
     ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: ChangeRecoveryAddress = parse_log(log.clone()).unwrap();
+        let parsed_log: ChangeRecoveryAddress = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
             to: vec![],
@@ -302,16 +297,145 @@ impl IdRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&self.store).await.unwrap();
+        event_row.insert(&store).await?;
 
         db::FidRow::update_recovery_address(
-            &self.store,
+            &store,
             parsed_log.id.as_u64(),
             parsed_log.recovery.to_fixed_bytes(),
         )
-        .await
-        .unwrap();
+        .await?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethers::core::types::{Bytes, Log, H160, U64};
+    use hex::FromHex;
+    use sqlx::Row;
+    use std::path::Path;
+    use std::str::FromStr;
+
+    async fn setup_db() -> Store {
+        let store = Store::new("sqlite::memory:".to_string()).await;
+        let migrator = sqlx::migrate::Migrator::new(Path::new("../storage/migrations"))
+            .await
+            .unwrap();
+        migrator.run(&store.conn).await.unwrap();
+        store
+    }
+
+    fn mock_log() -> Log {
+        Log {
+            address: H160::from_str("0x00000000fc6c5f01fc30151999387bb99a9f489b").unwrap(),
+            topics: vec![
+                H256::from_str(
+                    "0xf2e19a901b0748d8b08e428d0468896a039ac751ec4fec49b44b7b9c28097e45",
+                )
+                .unwrap(),
+                H256::from_str(
+                    "0x00000000000000000000000074551863ebff52d6e3d6657dd1d2337bdb60521b",
+                )
+                .unwrap(),
+                H256::from_str(
+                    "0x0000000000000000000000000000000000000000000000000000000000000d55",
+                )
+                .unwrap(),
+            ],
+            data: Bytes::from_hex(
+                "0x00000000000000000000000000000000fcb080a4d6c39a9354da9eb9bc104cd7",
+            )
+            .unwrap(),
+            block_hash: Some(
+                H256::from_str(
+                    "0x81340703f2d3064dc4ce507b1491e25efdd32e048827f68819e12727c9924d5d",
+                )
+                .unwrap(),
+            ),
+            block_number: Some(U64::from(111894017)),
+            transaction_hash: Some(
+                H256::from_str(
+                    "0xd6b5e15c489e27cdeecbbd8801d62b6f7a0ff05609bc89dd3ab1083c9e3a2d1a",
+                )
+                .unwrap(),
+            ),
+            transaction_index: Some(U64::from(7)),
+            log_index: Some(U256::from(208)),
+            transaction_log_index: None,
+            log_type: None,
+            removed: Some(false),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_register_logs() {
+        let store = setup_db().await;
+        let (provider, mock) = Provider::mocked();
+        mock.push::<Vec<Log>, Vec<Log>>(vec![mock_log()])
+            .expect("pushing mock log");
+
+        let id_registry = Contract::new(
+            provider,
+            "0x00000000fc6c5f01fc30151999387bb99a9f489b".to_string(),
+            "./abis/IdRegistry.json".to_string(),
+        )
+        .unwrap();
+
+        let logs = id_registry.get_register_logs(0, 100000000).await.unwrap();
+        id_registry
+            .persist_register_log(&store, &logs[0], 10u32)
+            .await
+            .unwrap();
+
+        let mut conn = store.conn.acquire().await.unwrap();
+        let chain_event_rows = sqlx::query("select * from chain_events")
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(chain_event_rows.len(), 1);
+        assert_eq!(chain_event_rows[0].get::<i64, _>("fid"), 3413);
+        assert_eq!(chain_event_rows[0].get::<i32, _>("type"), 3);
+        assert_eq!(chain_event_rows[0].get::<i32, _>("chain_id"), 10);
+        assert_eq!(chain_event_rows[0].get::<i32, _>("transaction_index"), 7);
+        assert_eq!(chain_event_rows[0].get::<i32, _>("block_number"), 111894017);
+        assert_eq!(
+            hex::encode(chain_event_rows[0].get::<Vec<u8>, _>("block_hash")),
+            "81340703f2d3064dc4ce507b1491e25efdd32e048827f68819e12727c9924d5d"
+        );
+        assert_eq!(
+            hex::encode(chain_event_rows[0].get::<Vec<u8>, _>("transaction_hash")),
+            "d6b5e15c489e27cdeecbbd8801d62b6f7a0ff05609bc89dd3ab1083c9e3a2d1a"
+        );
+        assert_eq!(
+            hex::encode(chain_event_rows[0].get::<Vec<u8>, _>("body")),
+            "0a1474551863ebff52d6e3d6657dd1d2337bdb60521b1001221400000000fcb080a4d6c39a9354da9eb9bc104cd7"
+        );
+        assert_eq!(
+            hex::encode(chain_event_rows[0].get::<Vec<u8>, _>("raw")),
+            "00000000000000000000000000000000fcb080a4d6c39a9354da9eb9bc104cd7"
+        );
+
+        let fid_rows = sqlx::query("select * from fids")
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+
+        assert_eq!(fid_rows.len(), 1);
+        assert_eq!(fid_rows[0].get::<i64, _>("fid"), 3413);
+        assert_eq!(
+            fid_rows[0].get::<String, _>("chain_event_id"),
+            chain_event_rows[0].get::<String, _>("id")
+        );
+        assert_eq!(
+            hex::encode(fid_rows[0].get::<Vec<u8>, _>("custody_address")),
+            "74551863ebff52d6e3d6657dd1d2337bdb60521b"
+        );
+        assert_eq!(
+            hex::encode(fid_rows[0].get::<Vec<u8>, _>("recovery_address")),
+            "00000000fcb080a4d6c39a9354da9eb9bc104cd7"
+        );
     }
 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT block_number\nFROM chain_events\nORDER BY block_number\nDESC LIMIT 1;",
+  "describe": {
+    "columns": [
+      {
+        "name": "block_number",
+        "ordinal": 0,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "846ee38a52ecdaa0f20ccf0518979f1174279c4cd2634e2bb142b3e53c371905"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE fids SET custody_address = ? WHERE fid = ?;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "5aa05c7d36be3c45f8e9c7630b4d5839789951dc5c3d86e2f3defd9a0e7a03aa"
+}

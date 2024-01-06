@@ -1,10 +1,7 @@
-use sqlx::sqlite::SqliteRow;
-use sqlx::Row;
-use uuid::Uuid;
-
 use prost::Message;
 use teleport_common::protobufs::generated::on_chain_event::Body::*;
 use teleport_common::protobufs::generated::OnChainEvent;
+use uuid::Uuid;
 
 pub struct ChainEventRow {
     pub id: String,
@@ -53,46 +50,41 @@ impl ChainEventRow {
 
     pub async fn insert(&self, store: &crate::Store) -> Result<String, sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "insert into chain_events (
+        let id = self.id.clone();
+        let block_timestamp = self.block_timestamp as i64;
+        let fid = self.fid as i64;
+        let block_hash = self.block_hash.clone();
+        let transaction_hash = self.transaction_hash.clone();
+        let body = self.body.clone();
+        let raw = self.raw.clone();
+        sqlx::query_file!(
+            "src/queries/insert_chain_event.sql",
             id,
             block_timestamp,
             fid,
-            chain_id,
-            block_number,
-            transaction_index,
-            log_index,
-            type,
+            self.chain_id,
+            self.block_number,
+            self.transaction_index,
+            self.log_index,
+            self.r#type,
             block_hash,
             transaction_hash,
             body,
             raw
-        ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ";
-        sqlx::query(query)
-            .bind(self.id.clone())
-            .bind(self.block_timestamp as i64)
-            .bind(self.fid as i64)
-            .bind(self.chain_id)
-            .bind(self.block_number)
-            .bind(self.transaction_index)
-            .bind(self.log_index)
-            .bind(self.r#type)
-            .bind(self.block_hash.clone().as_slice())
-            .bind(self.transaction_hash.clone())
-            .bind(self.body.clone())
-            .bind(self.raw.clone())
-            .execute(&mut *conn)
-            .await?;
-        Ok(self.id.clone())
+        )
+        .execute(&mut *conn)
+        .await?;
+
+        Ok(id)
     }
 
     pub async fn max_block_number(store: &crate::Store) -> Result<i64, sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "SELECT max(block_number) from chain_events;";
-        let row = sqlx::query(query).fetch_one(&mut *conn).await?;
-        let max_block_number: i64 = row.get(0);
-        Ok(max_block_number)
+        let row = sqlx::query_file!("src/queries/max_block_number.sql")
+            .fetch_one(&mut *conn)
+            .await?;
+
+        Ok(row.block_number)
     }
 }
 
@@ -107,23 +99,21 @@ pub struct FidRow {
 impl FidRow {
     pub async fn insert(&self, store: &crate::Store) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "insert into fids (
-            fid,
-            registered_at,
+        let recovery_address = self.recovery_address.clone();
+        let recovery_address = recovery_address.as_slice();
+        let chain_event_id = self.chain_event_id.clone();
+        let custody_address = self.custody_address.clone();
+        let custody_address = custody_address.as_slice();
+        sqlx::query_file!(
+            "src/queries/insert_fid.sql",
+            self.fid,
+            self.registered_at,
             chain_event_id,
             custody_address,
             recovery_address
-        ) 
-        VALUES (?, ?, ?, ?, ?);
-        ";
-        sqlx::query(query)
-            .bind(self.fid)
-            .bind(self.registered_at)
-            .bind(self.chain_event_id.clone())
-            .bind(self.custody_address.clone().as_slice())
-            .bind(self.recovery_address.clone().as_slice())
-            .execute(&mut *conn)
-            .await?;
+        )
+        .execute(&mut *conn)
+        .await?;
         Ok(())
     }
 
@@ -133,10 +123,9 @@ impl FidRow {
         to: [u8; 20],
     ) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "update fids set recovery_address = ? where fid = ?;";
-        sqlx::query(query)
-            .bind(to.as_slice())
-            .bind(fid as i64)
+        let fid = fid as i64;
+        let to = to.as_slice();
+        sqlx::query_file!("src/queries/update_recovery_address.sql", to, fid)
             .execute(&mut *conn)
             .await?;
         Ok(())
@@ -148,10 +137,9 @@ impl FidRow {
         to: [u8; 20],
     ) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "update fids set custody_address = ? where fid = ?;";
-        sqlx::query(query)
-            .bind(to.as_slice())
-            .bind(fid as i64)
+        let fid = fid as i64;
+        let to = to.as_slice();
+        sqlx::query_file!("src/queries/update_custody_address.sql", to, fid)
             .execute(&mut *conn)
             .await?;
         Ok(())
@@ -166,8 +154,8 @@ pub struct SignerRow {
     pub requester_fid: u64,
     pub add_chain_event_id: String,
     pub remove_chain_event_id: Option<String>,
-    pub key_type: i16,
-    pub metadata_type: i16,
+    pub key_type: i64,
+    pub metadata_type: i64,
     pub key: Vec<u8>,
     pub metadata: String,
 }
@@ -178,8 +166,8 @@ impl SignerRow {
         requester_fid: u64,
         add_chain_event_id: String,
         remove_chain_event_id: Option<String>,
-        key_type: i16,
-        metadata_type: i16,
+        key_type: i64,
+        metadata_type: i64,
         key: Vec<u8>,
         metadata: String,
     ) -> Self {
@@ -203,35 +191,28 @@ impl SignerRow {
 
     pub async fn insert(&self, store: &crate::Store) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "insert into signers (
-            id,
-            added_at,
-            removed_at,
+        let fid = self.fid as i64;
+        let requester_fid = self.requester_fid as i64;
+        let add_chain_event_id = self.add_chain_event_id.clone();
+        let remove_chain_event_id = self.remove_chain_event_id.clone();
+        let metadata = self.metadata.clone();
+        let key = self.key.clone();
+        sqlx::query_file!(
+            "src/queries/insert_signer.sql",
+            self.id,
+            self.added_at,
+            self.removed_at,
             fid,
             requester_fid,
             add_chain_event_id,
             remove_chain_event_id,
-            key_type,
-            metadata_type,
+            self.key_type,
+            self.metadata_type,
             key,
             metadata
-        ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ";
-        sqlx::query(query)
-            .bind(self.id.clone())
-            .bind(self.added_at.clone())
-            .bind(self.removed_at.clone())
-            .bind(self.fid as i64)
-            .bind(self.requester_fid as i64)
-            .bind(self.add_chain_event_id.clone())
-            .bind(self.remove_chain_event_id.clone())
-            .bind(self.key_type)
-            .bind(self.metadata_type)
-            .bind(self.key.clone())
-            .bind(self.metadata.clone())
-            .execute(&mut *conn)
-            .await?;
+        )
+        .execute(&mut *conn)
+        .await?;
         Ok(())
     }
 
@@ -241,25 +222,28 @@ impl SignerRow {
         remove_chain_event_id: String,
     ) -> Result<u64, sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "update signers set remove_chain_event_id = ? where key = ? and key_type = ?;";
-        let result = sqlx::query(query)
-            .bind(remove_chain_event_id)
-            .bind(key)
-            .bind(1 as i16)
-            .execute(&mut *conn)
-            .await?;
+        let result = sqlx::query_file!(
+            "src/queries/update_remove_chain_event.sql",
+            remove_chain_event_id,
+            key,
+            1i16
+        )
+        .execute(&mut *conn)
+        .await?;
 
         Ok(result.rows_affected())
     }
 
-    pub async fn get_by_key(store: &crate::Store, key: Vec<u8>) -> Result<SqliteRow, sqlx::Error> {
+    pub async fn get_by_key(
+        store: &crate::Store,
+        key: Vec<u8>,
+    ) -> Result<(i64, String), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "select * from signers where key = ?;";
-        let row = sqlx::query(query)
-            .bind(key)
-            .fetch_optional(&mut *conn)
+        let record = sqlx::query_file!("src/queries/signer_metadata_by_key.sql", key)
+            .fetch_one(&mut *conn)
             .await?;
-        row.ok_or(sqlx::Error::RowNotFound)
+
+        Ok((record.key_type, record.metadata))
     }
 }
 
@@ -296,27 +280,23 @@ impl StorageAllocationRow {
 
     pub async fn insert(&self, store: &crate::Store) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let query = "insert into storage_allocations (
-            id,
-            rented_at,
-            expires_at,
+        let payer = self.payer.clone();
+        let payer = payer.as_slice();
+        let fid = self.fid as i64;
+        let units = self.units as i64;
+        let chain_event_id = self.chain_event_id.clone();
+        sqlx::query_file!(
+            "src/queries/insert_storage_allocation.sql",
+            self.id,
+            self.rented_at,
+            self.expires_at,
             chain_event_id,
             fid,
             units,
             payer
-        ) 
-        VALUES (?, ?, ?, ?, ?, ?, ?);
-        ";
-        sqlx::query(query)
-            .bind(self.id.clone())
-            .bind(self.rented_at)
-            .bind(self.expires_at)
-            .bind(self.chain_event_id.clone())
-            .bind(self.fid as i64)
-            .bind(self.units as i64)
-            .bind(self.payer.clone())
-            .execute(&mut *conn)
-            .await?;
+        )
+        .execute(&mut *conn)
+        .await?;
         Ok(())
     }
 }

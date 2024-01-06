@@ -3,7 +3,6 @@ pub mod db;
 use sqlx::sqlite::SqlitePool;
 
 pub const DB_DIRECTORY: &str = ".";
-pub const MAX_DB_ITERATOR_OPEN_MS: u64 = 60 * 1000;
 
 #[derive(Debug, Clone)]
 pub struct Store {
@@ -18,20 +17,11 @@ impl Store {
     }
 }
 
-pub fn get_db_path(name: &str) -> String {
-    format!("sqlite:{}/{}", DB_DIRECTORY, name)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqlx::migrate::MigrateDatabase;
     use sqlx::Row;
-
-    #[test]
-    fn test_get_db_path() {
-        assert_eq!(get_db_path("farcaster.db"), "sqlite:./farcaster.db");
-    }
 
     #[tokio::test]
     async fn test_create_new_store() {

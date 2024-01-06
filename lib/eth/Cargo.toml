@@ -1,6 +1,6 @@
 [package]
 authors = { workspace = true }
-description = "ETH interaction for Teleport"
+description = "ETH event indexing for Teleport"
 edition = { workspace = true }
 name = "teleport_eth"
 homepage = { workspace = true }

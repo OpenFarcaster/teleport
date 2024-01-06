@@ -7,4 +7,7 @@ db-create:
 db-migrate:
 	DATABASE_URL=$(DATABASE_URL) sqlx migrate run --source $(MIGRATIONS_DIR)
 
-.PHONY: db-create db-migrate
+db-query-prepare:
+	DATABASE_URL=$(DATABASE_URL) cargo sqlx prepare --workspace
+
+.PHONY: db-create db-migrate db-query-prepare

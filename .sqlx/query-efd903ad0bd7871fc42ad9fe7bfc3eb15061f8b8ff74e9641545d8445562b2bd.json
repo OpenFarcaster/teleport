@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO chain_events (\n    id,\n    block_timestamp,\n    fid,\n    chain_id,\n    block_number,\n    transaction_index,\n    log_index,\n    type,\n    block_hash,\n    transaction_hash,\n    body,\n    raw\n) \nVALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 12
+    },
+    "nullable": []
+  },
+  "hash": "efd903ad0bd7871fc42ad9fe7bfc3eb15061f8b8ff74e9641545d8445562b2bd"
+}

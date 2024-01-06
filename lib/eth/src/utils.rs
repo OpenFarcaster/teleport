@@ -1,11 +1,9 @@
 use ethers::abi::Abi;
 use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
+use std::fs;
 
 pub fn read_abi(path: String) -> Result<Abi, Box<dyn Error>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
-    let contract_abi: Abi = serde_json::from_reader(reader)?;
+    let abi_str = fs::read_to_string(path)?;
+    let contract_abi: Abi = serde_json::from_str(&abi_str)?;
     Ok(contract_abi)
 }
