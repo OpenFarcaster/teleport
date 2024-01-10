@@ -58,6 +58,9 @@ futures-util = { version = "0.3.17" }
 alloy-dyn-abi = { version = "0.5.3", features = ["eip712"] }
 alloy-primitives = { version = "0.5.3" }
 futures = { version = "0.3.17" }
+figment = { version = "0.10.12", features = ["toml", "env"] }
+dotenv = { version = "0.15.0" }
+
 
 [profile.release]
 codegen-units = 1

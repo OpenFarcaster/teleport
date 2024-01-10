@@ -1,7 +1,9 @@
+use crate::utils::read_abi;
+use alloy_dyn_abi::DynSolType;
 use ethers::{
-    contract::{parse_log, Contract, ContractInstance, EthEvent},
+    contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
     core::utils::keccak256,
-    providers::{Http, Middleware, Provider},
+    providers::{JsonRpcClient, Middleware, Provider},
     types::{Address, Bytes, Filter, Log, H256, U256},
 };
 use log;
@@ -16,11 +18,6 @@ use teleport_common::protobufs::generated::{
 };
 use teleport_storage::db::{self};
 use teleport_storage::Store;
-
-use alloy_dyn_abi::DynSolType;
-use alloy_primitives::{hex, serde_hex};
-
-use crate::utils::read_abi;
 
 #[derive(Debug, Clone, EthEvent)]
 #[allow(non_snake_case)]
@@ -44,10 +41,9 @@ struct Migrated {
 }
 
 #[derive(Debug, Clone)]
-pub struct KeyRegistry {
-    store: Store,
-    provider: Provider<Http>,
-    contract: ContractInstance<Arc<Provider<Http>>, Provider<Http>>,
+pub struct Contract<T> {
+    provider: Provider<T>,
+    inner: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,24 +54,19 @@ struct SignerRequestMetadata {
     pub deadline: u64,
 }
 
-impl KeyRegistry {
+impl<T: JsonRpcClient + Clone> Contract<T> {
     pub fn new(
-        http_rpc_url: String,
-        store: Store,
+        provider: Provider<T>,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
-        let http_provider = Provider::<Http>::try_from(http_rpc_url)?
-            .interval(std::time::Duration::from_millis(2000));
-        let p = http_provider.clone();
         let contract_abi = read_abi(abi_path)?;
-        let addr: Address = contract_addr.parse().unwrap();
-        let contract = Contract::new(addr, contract_abi, Arc::new(http_provider));
+        let addr: Address = contract_addr.parse()?;
+        let contract = EthContract::new(addr, contract_abi, Arc::new(provider.clone()));
 
-        Ok(KeyRegistry {
-            store,
-            provider: p,
-            contract,
+        Ok(Contract {
+            provider,
+            inner: contract,
         })
     }
 
@@ -87,7 +78,7 @@ impl KeyRegistry {
         let event_signature = "Add(uint256,uint32,bytes,bytes,uint8,bytes)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -136,13 +127,18 @@ impl KeyRegistry {
         }
     }
 
-    pub async fn persist_add_log(&self, log: Log, chain_id: u32) -> Result<(), Box<dyn Error>> {
+    pub async fn persist_add_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+    ) -> Result<(), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes()).as_u64();
         let key_type = U256::from_big_endian(log.topics[2].as_bytes()).as_u32();
         let key_hash = H256::from_slice(&log.topics[3].as_bytes());
 
         log::info!(
-            "got Add log for key hash: {:? } in tx: {:?}",
+            "got Add log for key hash: {:?} in tx: {:?}",
             key_hash,
             log.transaction_hash
         );
@@ -151,10 +147,10 @@ impl KeyRegistry {
         let key_bytes = key.as_bytes();
 
         // validate that keyBytes is an EdDSA pub key and keyType == 1
-        assert!(key_bytes.len() == 32, "key is not 32 bytes long");
+        assert_eq!(key_bytes.len(), 32, "key is not 32 bytes long");
 
         let metadata_type = log.data[190]; // 190
-        let signer_request = KeyRegistry::decode_metadata(&log);
+        let signer_request = Contract::<T>::decode_metadata(&log);
         let metadata_json = serde_json::to_string(&signer_request).unwrap();
         let metadata = metadata_json.to_string().as_bytes().to_vec();
         let body = SignerEventBody {
@@ -180,26 +176,24 @@ impl KeyRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        let event_id = event_row.insert(&self.store).await.unwrap();
+        let event_id = event_row.insert(&store).await?;
 
-        // store keyBytes in db
+        // store signer in db
         let signer = db::SignerRow::new(
             fid,
             signer_request.request_fid,
             event_id,
             None,
-            key_type as i16,
-            metadata_type as i16,
+            key_type as i64,
+            metadata_type as i64,
             key_bytes.to_vec(),
             metadata_json.to_string(),
         );
-        let result = signer.insert(&self.store).await;
-
-        match &result {
-            Err(sqlx::error::Error::Database(e)) if e.is_unique_violation() => {
-                println!("signer already exists, skipping");
-            }
-            _ => {
+        let result = signer.insert(&store).await;
+        if let Err(sqlx::error::Error::Database(e)) = &result {
+            if e.is_unique_violation() {
+                log::warn!("signer already exists, skipping");
+            } else {
                 result?;
             }
         }
@@ -215,7 +209,7 @@ impl KeyRegistry {
         let event_signature = "Remove(uint256,bytes,bytes)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -224,9 +218,14 @@ impl KeyRegistry {
         Ok(logs)
     }
 
-    // Hubs listen for this, validate that keyType == 1 and keyBytes exists in db.
-    // keyBytes is marked as removed, messages signed by keyBytes with `fid` are invalid (todo).
-    pub async fn persist_remove_log(&self, log: Log, chain_id: u32) -> Result<(), Box<dyn Error>> {
+    /// Hubs listen for this, validate that keyType == 1 and keyBytes exists in db.
+    /// keyBytes is marked as removed, messages signed by keyBytes with `fid` are invalid (todo).
+    pub async fn persist_remove_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+    ) -> Result<(), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes());
         let key_hash = Address::from(log.topics[2]);
         log::info!(
@@ -239,19 +238,17 @@ impl KeyRegistry {
         let key_bytes = log.data.chunks(32).last().unwrap();
 
         // get signer from db
-        let signer = db::SignerRow::get_by_key(&self.store, key_bytes.to_vec()).await?;
-        let key_type: u32 = signer.get("key_type");
-        let metadata: Vec<u8> = signer.get("metadata");
+        let (key_type, metadata) = db::SignerRow::get_by_key(&store, key_bytes.to_vec()).await?;
         let body = SignerEventBody {
             key: key_bytes.to_vec(),
-            key_type,
+            key_type: key_type as u32,
             event_type: SignerEventType::Remove.into(),
-            metadata,
-            metadata_type: 1 as u32,
+            metadata: metadata.into_bytes(),
+            metadata_type: 1u32,
         };
 
         // validate that keyType == 1
-        assert!(key_type == 1, "key type is not 1");
+        assert_eq!(key_type, 1, "key type is not 1");
 
         // store event in db
         let onchain_event = OnChainEvent {
@@ -269,9 +266,9 @@ impl KeyRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        let event_id = event_row.insert(&self.store).await.unwrap();
+        let event_id = event_row.insert(&store).await.unwrap();
 
-        db::SignerRow::update_remove_chain_event(&self.store, key_bytes.to_vec(), event_id).await?;
+        db::SignerRow::update_remove_chain_event(&store, key_bytes.to_vec(), event_id).await?;
 
         Ok(())
     }
@@ -284,7 +281,7 @@ impl KeyRegistry {
         let event_signature = "AdminReset(uint256,bytes,bytes)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -295,10 +292,11 @@ impl KeyRegistry {
 
     // validate that keyType == 1 and that keyBytes exists in db.
     // these keyBytes is no longer tracked, messages signed by keyBytes with `fid` are invalid,
-    // droped immediately and not accepted (todo)
+    // dropped immediately and not accepted (todo)
     pub async fn persist_admin_reset_log(
         &self,
-        log: Log,
+        store: &Store,
+        log: &Log,
         chain_id: u32,
     ) -> Result<(), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes());
@@ -313,17 +311,15 @@ impl KeyRegistry {
         let key_bytes = log.data.chunks(32).last().unwrap();
 
         // get signer from db
-        let signer = db::SignerRow::get_by_key(&self.store, key_bytes.to_vec()).await?;
-        let key_type: u32 = signer.get("key_type");
-        assert!(key_type == 1, "key type is not 1");
+        let (key_type, metadata) = db::SignerRow::get_by_key(&store, key_bytes.to_vec()).await?;
+        assert_eq!(key_type, 1, "key type is not 1");
 
-        let metadata: Vec<u8> = signer.get("metadata");
         let body = SignerEventBody {
             key: key_bytes.to_vec(),
-            key_type,
+            key_type: key_type as u32,
             event_type: SignerEventType::AdminReset.into(),
-            metadata,
-            metadata_type: 1 as u32,
+            metadata: metadata.into_bytes(),
+            metadata_type: 1u32,
         };
 
         let onchain_event = OnChainEvent {
@@ -341,7 +337,7 @@ impl KeyRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&self.store).await.unwrap();
+        event_row.insert(&store).await?;
 
         // TODO: invalidate keyBytes and messages signed by these keyBytes
 
@@ -356,7 +352,7 @@ impl KeyRegistry {
         let event_signature = "Migrated(uint256)";
         let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
-            .address(self.contract.address())
+            .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
             .topic0(topic);
@@ -367,7 +363,8 @@ impl KeyRegistry {
 
     pub async fn persist_migrated_log(
         &self,
-        log: Log,
+        store: &Store,
+        log: &Log,
         chain_id: u32,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Migrated = parse_log(log.clone()).unwrap();
@@ -392,7 +389,7 @@ impl KeyRegistry {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&self.store).await.unwrap();
+        event_row.insert(&store).await?;
 
         /*
         TODO
