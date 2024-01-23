@@ -266,8 +266,13 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(())
     }
 
-    pub async fn subscribe(&mut self, start_block: u64) -> Result<(), Box<dyn Error>> {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(360));
+    pub async fn subscribe(
+        &mut self,
+        start_block: u64,
+        interval_in_secs: u64,
+    ) -> Result<(), Box<dyn Error>> {
+        let mut interval =
+            tokio::time::interval(tokio::time::Duration::from_secs(interval_in_secs));
         let mut current_block = start_block;
         loop {
             interval.tick().await;

@@ -43,6 +43,7 @@ struct Config {
     key_registry_address: String,
     storage_registry_address: String,
     abi_dir: String,
+    indexer_interval_in_secs: u64,
 }
 
 #[tokio::main]
@@ -92,7 +93,7 @@ async fn main() {
         .unwrap();
 
     // Subscribe to new events asynchronously
-    let subscribe_task = indexer.subscribe(latest_block_num + 1);
+    let subscribe_task = indexer.subscribe(latest_block_num + 1, config.indexer_interval_in_secs);
 
     let secret_key_hex = config.farcaster_priv_key;
     let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");
