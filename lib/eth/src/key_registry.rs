@@ -132,6 +132,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes()).as_u64();
         let key_type = U256::from_big_endian(log.topics[2].as_bytes()).as_u32();
@@ -166,7 +167,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid,
@@ -225,6 +226,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes());
         let key_hash = Address::from(log.topics[2]);
@@ -256,7 +258,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: fid.as_u64(),
@@ -298,6 +300,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes());
         let key_hash = Address::from(log.topics[2]);
@@ -327,7 +330,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: fid.as_u64(),
@@ -366,6 +369,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Migrated = parse_log(log.clone()).unwrap();
         let body = SignerMigratedEventBody {
@@ -379,7 +383,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: 0,

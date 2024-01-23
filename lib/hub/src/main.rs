@@ -70,7 +70,7 @@ async fn main() {
 
     let provider = Provider::<Http>::try_from(config.optimism_l2_rpc_url).unwrap();
 
-    let indexer = Indexer::new(
+    let mut indexer = Indexer::new(
         store.clone(),
         provider,
         config.chain_id,
