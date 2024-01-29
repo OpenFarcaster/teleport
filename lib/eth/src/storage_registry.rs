@@ -80,6 +80,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Rent = parse_log(log.clone()).unwrap();
         let units = parsed_log.units.as_u32();
@@ -98,7 +99,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid,
@@ -140,6 +141,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         _store: &Store,
         log: &Log,
         _chain_id: u32,
+        _timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: SetMaxUnits = parse_log(log.clone()).unwrap();
         let _old_max = parsed_log.oldMax.as_u32();
@@ -172,6 +174,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         _store: &Store,
         log: &Log,
         _chain_id: u32,
+        _timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: SetDeprecationTimestamp = parse_log(log.clone()).unwrap();
         let _old_timestamp = parsed_log.oldTimestamp.as_u32();

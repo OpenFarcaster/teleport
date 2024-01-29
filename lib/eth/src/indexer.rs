@@ -1,10 +1,12 @@
 use crate::id_registry;
 use crate::key_registry;
 use crate::storage_registry;
+use ethers::types::H256;
 use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::BlockNumber,
 };
+use std::collections::HashMap;
 use std::error::Error;
 use teleport_storage::{db, Store};
 use tokio;
@@ -20,6 +22,7 @@ pub struct Indexer<T> {
     id_registry: id_registry::Contract<T>,
     key_registry: key_registry::Contract<T>,
     storage_registry: storage_registry::Contract<T>,
+    block_timestamp_cache: HashMap<H256, i64>,
 }
 
 impl<T: JsonRpcClient + Clone> Indexer<T> {
@@ -47,6 +50,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             storage_reg_address,
             format!("{}/StorageRegistry.json", abi_dir),
         )?;
+        let block_timestamp_cache = HashMap::new();
 
         Ok(Indexer {
             store,
@@ -55,6 +59,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             key_registry,
             storage_registry,
             chain_id,
+            block_timestamp_cache,
         })
     }
 
@@ -75,33 +80,53 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(latest_block.number.unwrap().as_u64())
     }
 
-    async fn sync_register_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn get_block_timestamp(&mut self, block_hash: H256) -> Result<i64, Box<dyn Error>> {
+        if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
+            return Ok(*timestamp);
+        }
+
+        let block = self.provider.get_block(block_hash).await?.unwrap();
+        let timestamp = block.timestamp.as_u32().into();
+        self.block_timestamp_cache.insert(block_hash, timestamp);
+        Ok(timestamp)
+    }
+
+    async fn sync_register_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let register_logs = self.id_registry.get_register_logs(start, end).await?;
         for log in register_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.id_registry
-                .persist_register_log(&self.store, &log, self.chain_id)
+                .persist_register_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_transfer_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_transfer_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let transfer_logs = self.id_registry.get_transfer_logs(start, end).await?;
         for log in transfer_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.id_registry
-                .persist_transfer_log(&self.store, &log, self.chain_id)
+                .persist_transfer_log(&self.store, &log, self.chain_id, timestamp)
                 .await?;
         }
 
         Ok(())
     }
 
-    async fn sync_recovery_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_recovery_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let recovery_logs = self.id_registry.get_recovery_logs(start, end).await?;
         for log in recovery_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.id_registry
-                .persist_recovery_log(&self.store, &log, self.chain_id)
+                .persist_recovery_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
@@ -109,7 +134,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
     }
 
     async fn sync_change_recovery_address_logs(
-        &self,
+        &mut self,
         start: u64,
         end: u64,
     ) -> Result<(), Box<dyn Error>> {
@@ -118,77 +143,102 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             .get_change_recovery_address_logs(start, end)
             .await?;
         for log in change_recovery_address_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.id_registry
-                .persist_change_recovery_address_log(&self.store, &log, self.chain_id)
+                .persist_change_recovery_address_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_add_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_add_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let add_logs = self.key_registry.get_add_logs(start, end).await?;
         for log in add_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.key_registry
-                .persist_add_log(&self.store, &log, self.chain_id)
+                .persist_add_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_remove_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_remove_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let remove_logs = self.key_registry.get_remove_logs(start, end).await?;
         for log in remove_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.key_registry
-                .persist_remove_log(&self.store, &log, self.chain_id)
+                .persist_remove_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_admin_reset_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_admin_reset_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let admin_reset_logs = self.key_registry.get_admin_reset_logs(start, end).await?;
         for log in admin_reset_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.key_registry
-                .persist_admin_reset_log(&self.store, &log, self.chain_id)
+                .persist_admin_reset_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_migrated_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_migrated_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let migrated_logs = self.key_registry.get_migrated_logs(start, end).await?;
         for log in migrated_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.key_registry
-                .persist_migrated_log(&self.store, &log, self.chain_id)
+                .persist_migrated_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_rent_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_rent_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let rent_logs = self.storage_registry.get_rent_logs(start, end).await?;
         for log in rent_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.storage_registry
-                .persist_rent_log(&self.store, &log, self.chain_id)
+                .persist_rent_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    async fn sync_set_max_units_logs(&self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
+    async fn sync_set_max_units_logs(
+        &mut self,
+        start: u64,
+        end: u64,
+    ) -> Result<(), Box<dyn Error>> {
         let set_max_units_logs = self
             .storage_registry
             .get_set_max_units_logs(start, end)
             .await?;
         for log in set_max_units_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.storage_registry
-                .persist_set_max_units_log(&self.store, &log, self.chain_id)
+                .persist_set_max_units_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
@@ -196,7 +246,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
     }
 
     async fn sync_deprecation_timestamp_logs(
-        &self,
+        &mut self,
         start: u64,
         end: u64,
     ) -> Result<(), Box<dyn Error>> {
@@ -205,15 +255,18 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             .get_deprecation_timestamp_logs(start, end)
             .await?;
         for log in deprecation_timestamp_logs {
+            let block_hash = log.block_hash.unwrap();
+            let timestamp = self.get_block_timestamp(block_hash).await?;
+
             self.storage_registry
-                .persist_deprecation_timestamp_log(&self.store, &log, self.chain_id)
+                .persist_deprecation_timestamp_log(&self.store, &log, self.chain_id, timestamp)
                 .await?
         }
 
         Ok(())
     }
 
-    pub async fn subscribe(&self, start_block: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn subscribe(&mut self, start_block: u64) -> Result<(), Box<dyn Error>> {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(360));
         let mut current_block = start_block;
         loop {
@@ -224,7 +277,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         }
     }
 
-    pub async fn sync(&self, start_block: u64, end_block: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn sync(&mut self, start_block: u64, end_block: u64) -> Result<(), Box<dyn Error>> {
         let mut current_block = start_block;
 
         log::info!(
@@ -238,6 +291,9 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             let percent_complete =
                 (current_block - start_block) as f64 / (end_block - start_block) as f64;
             log::info!("events sync progress = {:.2}%", percent_complete * 100.0);
+
+            // Clear block timestamp cache to avoid overloading it with useless data
+            self.block_timestamp_cache.clear();
 
             let start = current_block;
             let end = current_block + 2000;

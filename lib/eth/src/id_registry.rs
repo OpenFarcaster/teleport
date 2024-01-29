@@ -1,4 +1,5 @@
 use crate::utils::read_abi;
+use core::time;
 use ethers::{
     contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
     core::utils::keccak256,
@@ -7,11 +8,15 @@ use ethers::{
 };
 use std::error::Error;
 use std::sync::Arc;
-use teleport_common::protobufs::generated::{
-    on_chain_event, IdRegisterEventBody, IdRegisterEventType, OnChainEvent, OnChainEventType,
+use teleport_common::{
+    protobufs::generated::{
+        on_chain_event, IdRegisterEventBody, IdRegisterEventType, OnChainEvent, OnChainEventType,
+    },
+    time::to_farcaster_time,
 };
 use teleport_storage::db::{self};
 use teleport_storage::Store;
+use uuid::timestamp;
 
 #[derive(Debug, Clone, EthEvent)]
 struct Register {
@@ -93,6 +98,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Register = parse_log(log.clone())?;
 
@@ -108,7 +114,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: parsed_log.id.as_u64(),
@@ -122,9 +128,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
 
         let fid_row = db::FidRow {
             fid: parsed_log.id.as_u64() as i64,
-            // TODO: there is no efficient way to get the timestamp from the block
-            // without fetching the block itself in another RPC call
-            registered_at: 0,
+            registered_at: timestamp.into(),
             chain_event_id: event_row.id,
             custody_address: parsed_log.to.to_fixed_bytes(),
             recovery_address: parsed_log.recovery.to_fixed_bytes(),
@@ -155,6 +159,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Transfer = parse_log(log.clone()).unwrap();
 
@@ -170,7 +175,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: parsed_log.id.as_u64(),
@@ -213,6 +218,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: Recover = parse_log(log.clone())?;
 
@@ -228,7 +234,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: parsed_log.id.as_u64(),
@@ -272,6 +278,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
+        timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
         let parsed_log: ChangeRecoveryAddress = parse_log(log.clone())?;
 
@@ -287,7 +294,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             chain_id,
             block_number: log.block_number.unwrap().as_u32(),
             block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: 0,
+            block_timestamp: timestamp as u64,
             transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
             log_index: log.log_index.unwrap().as_u32(),
             fid: parsed_log.id.as_u64(),
@@ -386,7 +393,7 @@ mod tests {
 
         let logs = id_registry.get_register_logs(0, 100000000).await.unwrap();
         id_registry
-            .persist_register_log(&store, &logs[0], 10u32)
+            .persist_register_log(&store, &logs[0], 10u32, 0i64)
             .await
             .unwrap();
 
