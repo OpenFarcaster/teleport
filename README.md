@@ -4,24 +4,31 @@ A fast implementation of a Farcaster Hub, in Rust.
 
 ⚠️⚠️ The project is still under active development and nowhere close to being production ready ⚠️⚠️
 
+## Introduction
+
+If you are new to Farcaster Hubs and/or Teleport - here's a quick video that does a high-level overview of the responsibilities of a Hub and where Teleport is at.
+
+Note that the codebase will outpace the video, and things mentioned `TODO` in the video might have been done now.
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/YXu2DGMhIao" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+
 ## Rough Features
 
 There are a few things Teleport is currently capable of, and a lot more it is not currently capable of. In no specific order, Teleport can currently:
 
 - [x] Start a libp2p gossip node and connect to other peers
 - [x] Broadcast Gossip Messages to enable features like posting casts
+- [x] Sync on-chain events from contracts deployed to Optimism
 - [-] Do PubSub peer discovery over GossipSub (partial support)
 
 A lot is still left to do:
 
-- [ ] Persistently store data in SQLite
-- [ ] gRPC APIs for users/admins
-- [ ] Be able to sync historical data with nodes
-- [ ] Exchange contact info
+- [ ] Diff sync with other hubs
+- [ ] gRPC APIs
+- [ ] REST API
+- [ ] CLI
 - [ ] Metrics
 - [ ] Easier APIs for different "types" of FC Messages
-
-Persistent Storage, handling received messages from peers, and historical data syncing are the highest priority items.
 
 ## Prerequisites
 
