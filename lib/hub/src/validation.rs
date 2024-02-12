@@ -26,7 +26,7 @@ impl<'a> Validator<'a> {
             generated::message_data::Body::VerificationRemoveBody(verification) => {
                 println!("Verification Remove: {:?}", verification);
             }
-            generated::message_data::Body::VerificationAddEthAddressBody(verification) => {
+            generated::message_data::Body::VerificationAddAddressBody(verification) => {
                 println!("Verification Add Eth Address: {:?}", verification);
             }
             generated::message_data::Body::UsernameProofBody(proof) => {
@@ -40,6 +40,9 @@ impl<'a> Validator<'a> {
             }
             generated::message_data::Body::ReactionBody(reaction) => {
                 println!("Reaction: {:?}", reaction);
+            }
+            generated::message_data::Body::FrameActionBody(frame_action) => {
+                println!("Frame Action: {:?}", frame_action);
             }
         }
         Ok(())

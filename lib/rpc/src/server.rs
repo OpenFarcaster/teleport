@@ -19,6 +19,13 @@ impl HubService for HubServer {
         todo!()
     }
 
+    async fn validate_message(
+        &self,
+        request: Request<Message>,
+    ) -> Result<Response<ValidationResponse>, Status> {
+        todo!()
+    }
+
     async fn get_event(
         &self,
         request: Request<EventRequest>,

@@ -14,6 +14,7 @@ use libp2p::{Multiaddr, PeerId};
 use prost::Message;
 use teleport_common::errors::{BadRequestType, HubError, UnavailableType};
 use teleport_common::protobufs::{self, generated};
+use teleport_common::time::get_farcaster_time;
 use teleport_storage::Store;
 use tokio::time::{interval, Interval};
 use void::Void;
@@ -447,6 +448,7 @@ impl EventLoop {
             peer_id: self.swarm.local_peer_id().to_bytes(),
             version: 1,
             content: Some(generated::gossip_message::Content::Message(message)),
+            timestamp: get_farcaster_time().unwrap(),
         };
 
         self.publish(gossip_message)
@@ -463,6 +465,7 @@ impl EventLoop {
             content: Some(generated::gossip_message::Content::ContactInfoContent(
                 contact_info,
             )),
+            timestamp: get_farcaster_time().unwrap(),
         };
 
         self.publish(gossip_message)
