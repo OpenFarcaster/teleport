@@ -5,4 +5,5 @@ INSERT INTO fids (
     custody_address,
     recovery_address
 ) 
-VALUES (?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT (fid) DO NOTHING;

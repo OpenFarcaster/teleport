@@ -138,12 +138,6 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let key_type = U256::from_big_endian(log.topics[2].as_bytes()).as_u32();
         let key_hash = H256::from_slice(&log.topics[3].as_bytes());
 
-        log::info!(
-            "got Add log for key hash: {:?} in tx: {:?}",
-            key_hash,
-            log.transaction_hash
-        );
-
         let key = H256::from_slice(&log.data[128..160]); // 160
         let key_bytes = key.as_bytes();
 

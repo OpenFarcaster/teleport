@@ -305,20 +305,31 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
 
             // id registry logs
             self.sync_register_logs(start, end).await?;
+            log::info!("synced register logs");
             self.sync_transfer_logs(start, end).await?;
+            log::info!("synced transfer logs");
             self.sync_recovery_logs(start, end).await?;
+            log::info!("synced recovery logs");
             self.sync_change_recovery_address_logs(start, end).await?;
+            log::info!("synced change recovery address logs");
 
             // key registry logs
             self.sync_add_logs(start, end).await?;
+            log::info!("synced add logs");
             self.sync_remove_logs(start, end).await?;
+            log::info!("synced remove logs");
             self.sync_admin_reset_logs(start, end).await?;
+            log::info!("synced admin reset logs");
             self.sync_migrated_logs(start, end).await?;
+            log::info!("synced migrated logs");
 
             // storage registry logs
             self.sync_rent_logs(start, end).await?;
+            log::info!("synced rent logs");
             self.sync_set_max_units_logs(start, end).await?;
+            log::info!("synced set max units logs");
             self.sync_deprecation_timestamp_logs(start, end).await?;
+            log::info!("synced deprecation timestamp logs");
 
             current_block = end + 1;
         }

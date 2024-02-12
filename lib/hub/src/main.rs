@@ -151,8 +151,6 @@ async fn main() {
 fn start(args: teleport_cli::start::StartCommand) {
     log::info!("Teleport Starting...");
 
-    // TODO: Handle reading a TOML config file
-
     let peer_id: PeerId;
 
     // TODO: Read peerid from files
