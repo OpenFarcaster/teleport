@@ -1,4 +1,5 @@
 use prost::Message;
+use sqlx::QueryBuilder;
 use teleport_common::protobufs::generated::on_chain_event::Body::*;
 use teleport_common::protobufs::generated::OnChainEvent;
 use uuid::Uuid;
@@ -144,6 +145,38 @@ impl FidRow {
             .await?;
         Ok(())
     }
+}
+
+pub async fn bulk_insert_fid_rows(
+    store: &crate::Store,
+    rows: &[FidRow],
+) -> Result<(), sqlx::Error> {
+    const MAX_PARAMS: usize = 999;
+    let params_per_row = 5; // TODO: derive this from number of fields in FidRow rather than a hardcoded size
+    let max_rows_per_batch = MAX_PARAMS / params_per_row;
+
+    for chunk in rows.chunks(max_rows_per_batch) {
+        let mut query_builder = QueryBuilder::new(
+            "INSERT INTO fids (fid, registered_at, chain_event_id, custody_address, recovery_address) ",
+        );
+
+        query_builder.push_values(chunk.iter(), |mut b, row| {
+            b.push_bind(row.fid as i64)
+                .push_bind(row.registered_at)
+                .push_bind(&row.chain_event_id)
+                .push_bind(row.custody_address.as_slice())
+                .push_bind(row.recovery_address.as_slice());
+        });
+
+        query_builder.push(" ON CONFLICT (fid) DO NOTHING");
+
+        let query = query_builder.build();
+
+        let mut conn = store.conn.acquire().await.unwrap();
+        query.execute(&mut *conn).await?;
+    }
+
+    Ok(())
 }
 
 pub struct SignerRow {

@@ -93,13 +93,13 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         Ok(logs)
     }
 
-    pub async fn persist_register_log(
+    async fn process_register_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
         timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<db::FidRow, Box<dyn Error>> {
         let parsed_log: Register = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
@@ -126,15 +126,53 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
         event_row.insert(&store).await?;
 
-        let fid_row = db::FidRow {
+        Ok(db::FidRow {
             fid: parsed_log.id.as_u64() as i64,
             registered_at: timestamp.into(),
             chain_event_id: event_row.id,
             custody_address: parsed_log.to.to_fixed_bytes(),
             recovery_address: parsed_log.recovery.to_fixed_bytes(),
-        };
+        })
+    }
 
+    pub async fn persist_register_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: i64,
+    ) -> Result<(), Box<dyn Error>> {
+        let fid_row = self
+            .process_register_log(store, log, chain_id, timestamp)
+            .await?;
         fid_row.insert(&store).await?;
+        Ok(())
+    }
+
+    pub async fn persist_many_register_logs(
+        &self,
+        store: &Store,
+        logs: &[Log],
+        chain_id: u32,
+        timestamps: &[i64],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut fid_rows = Vec::new();
+
+        let start_time = std::time::Instant::now();
+        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
+            let fid_row = self
+                .process_register_log(store, log, chain_id, *timestamp)
+                .await?;
+            fid_rows.push(fid_row);
+        }
+        println!(
+            "Processing register logs took: {:.2?}",
+            start_time.elapsed()
+        );
+
+        println!("Number of fid_rows: {}", fid_rows.len());
+
+        db::bulk_insert_fid_rows(store, &fid_rows).await?;
         Ok(())
     }
 

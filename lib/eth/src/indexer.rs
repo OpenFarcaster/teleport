@@ -6,6 +6,7 @@ use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::BlockNumber,
 };
+use futures::future::join_all;
 use std::collections::HashMap;
 use std::error::Error;
 use teleport_storage::{db, Store};
@@ -93,14 +94,44 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
 
     async fn sync_register_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
         let register_logs = self.id_registry.get_register_logs(start, end).await?;
-        for log in register_logs {
-            let block_hash = log.block_hash.unwrap();
-            let timestamp = self.get_block_timestamp(block_hash).await?;
 
-            self.id_registry
-                .persist_register_log(&self.store, &log, self.chain_id, timestamp)
-                .await?
-        }
+        let timestamp_futures: Vec<_> = register_logs
+            .iter()
+            .map(|log| {
+                let block_hash = log.block_hash.unwrap();
+                let provider = self.provider.clone();
+                async move {
+                    let block = loop {
+                        match provider.get_block(block_hash).await {
+                            Ok(Some(block)) => break block,
+                            Ok(None) => return Err("Block not found".into()),
+                            Err(e) => {
+                                if e.to_string().contains("429") {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(250))
+                                        .await;
+                                    continue;
+                                } else {
+                                    return Err(e.into());
+                                }
+                            }
+                        }
+                    };
+                    let timestamp = block.timestamp.as_u32().into();
+                    // TODO: re-add block timestamp caching
+                    Ok::<_, Box<dyn Error>>(timestamp)
+                }
+            })
+            .collect();
+
+        let timestamps: Vec<i64> = join_all(timestamp_futures)
+            .await
+            .into_iter()
+            .collect::<Result<_, _>>()?;
+
+        self.id_registry
+            .persist_many_register_logs(&self.store, &register_logs, self.chain_id, &timestamps)
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -304,8 +335,10 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             let end = current_block + 2000;
 
             // id registry logs
+            let start_time = tokio::time::Instant::now();
             self.sync_register_logs(start, end).await?;
-            log::info!("synced register logs");
+            log::info!("synced register logs in {:.2?}", start_time.elapsed());
+
             self.sync_transfer_logs(start, end).await?;
             log::info!("synced transfer logs");
             self.sync_recovery_logs(start, end).await?;
