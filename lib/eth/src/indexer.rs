@@ -1,10 +1,11 @@
 use crate::id_registry;
 use crate::key_registry;
 use crate::storage_registry;
-use ethers::types::H256;
+use crate::utils::get_block_timestamp;
 use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::BlockNumber,
+    types::H256,
 };
 use futures::future::join_all;
 use std::collections::HashMap;
@@ -100,33 +101,15 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             .map(|log| {
                 let block_hash = log.block_hash.unwrap();
                 let provider = self.provider.clone();
-                async move {
-                    let block = loop {
-                        match provider.get_block(block_hash).await {
-                            Ok(Some(block)) => break block,
-                            Ok(None) => return Err("Block not found".into()),
-                            Err(e) => {
-                                if e.to_string().contains("429") {
-                                    tokio::time::sleep(tokio::time::Duration::from_millis(250))
-                                        .await;
-                                    continue;
-                                } else {
-                                    return Err(e.into());
-                                }
-                            }
-                        }
-                    };
-                    let timestamp = block.timestamp.as_u32().into();
-                    // TODO: re-add block timestamp caching
-                    Ok::<_, Box<dyn Error>>(timestamp)
-                }
+                async move { get_block_timestamp(provider, block_hash).await }
             })
             .collect();
 
         let timestamps: Vec<i64> = join_all(timestamp_futures)
             .await
             .into_iter()
-            .collect::<Result<_, _>>()?;
+            .map(|result| result.unwrap()) // Assuming you want to unwrap the Result here. Handle errors as needed.
+            .collect();
 
         self.id_registry
             .persist_many_register_logs(&self.store, &register_logs, self.chain_id, &timestamps)
