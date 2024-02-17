@@ -98,7 +98,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
+        timestamp: u32,
     ) -> Result<db::FidRow, Box<dyn Error>> {
         let parsed_log: Register = parse_log(log.clone())?;
 
@@ -140,7 +140,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
+        timestamp: u32,
     ) -> Result<(), Box<dyn Error>> {
         let fid_row = self
             .process_register_log(store, log, chain_id, timestamp)
@@ -154,7 +154,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         store: &Store,
         logs: &[Log],
         chain_id: u32,
-        timestamps: &[i64],
+        timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {
         let mut fid_rows = Vec::new();
 
@@ -431,7 +431,7 @@ mod tests {
 
         let logs = id_registry.get_register_logs(0, 100000000).await.unwrap();
         id_registry
-            .persist_register_log(&store, &logs[0], 10u32, 0i64)
+            .persist_register_log(&store, &logs[0], 10u32, 0u32)
             .await
             .unwrap();
 

@@ -161,8 +161,8 @@ pub async fn bulk_insert_fid_rows(
         );
 
         query_builder.push_values(chunk.iter(), |mut b, row| {
-            b.push_bind(row.fid as i64)
-                .push_bind(row.registered_at)
+            b.push_bind(row.fid as u32)
+                .push_bind(row.registered_at as u32)
                 .push_bind(&row.chain_event_id)
                 .push_bind(row.custody_address.as_slice())
                 .push_bind(row.recovery_address.as_slice());

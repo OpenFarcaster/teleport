@@ -105,7 +105,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             })
             .collect();
 
-        let timestamps: Vec<i64> = join_all(timestamp_futures)
+        let timestamps: Vec<u32> = join_all(timestamp_futures)
             .await
             .into_iter()
             .map(|result| result.unwrap()) // Assuming you want to unwrap the Result here. Handle errors as needed.
