@@ -97,6 +97,16 @@ pub struct FidRow {
     pub recovery_address: [u8; 20],
 }
 
+pub struct FidTransfer {
+    pub fid: u32,
+    pub custody_address: [u8; 20],
+}
+
+pub struct FidRecoveryUpdate {
+    pub fid: u32,
+    pub recovery_address: [u8; 20],
+}
+
 impl FidRow {
     pub async fn insert(&self, store: &crate::Store) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
@@ -120,63 +130,136 @@ impl FidRow {
 
     pub async fn update_recovery_address(
         store: &crate::Store,
-        fid: u64,
-        to: [u8; 20],
+        update: &FidRecoveryUpdate,
     ) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let fid = fid as i64;
-        let to = to.as_slice();
+        let fid = update.fid as i64;
+        let to = update.recovery_address.as_slice();
         sqlx::query_file!("src/queries/update_recovery_address.sql", to, fid)
             .execute(&mut *conn)
             .await?;
         Ok(())
     }
 
-    pub async fn update_custody_address(
-        store: &crate::Store,
-        fid: u64,
-        to: [u8; 20],
-    ) -> Result<(), sqlx::Error> {
+    pub async fn transfer(store: &crate::Store, update: &FidTransfer) -> Result<(), sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
-        let fid = fid as i64;
-        let to = to.as_slice();
+        let fid = update.fid as i64;
+        let to = update.custody_address.as_slice();
         sqlx::query_file!("src/queries/update_custody_address.sql", to, fid)
             .execute(&mut *conn)
             .await?;
         Ok(())
     }
-}
 
-pub async fn bulk_insert_fid_rows(
-    store: &crate::Store,
-    rows: &[FidRow],
-) -> Result<(), sqlx::Error> {
-    const MAX_PARAMS: usize = 999;
-    let params_per_row = 5; // TODO: derive this from number of fields in FidRow rather than a hardcoded size
-    let max_rows_per_batch = MAX_PARAMS / params_per_row;
+    pub async fn bulk_insert(store: &crate::Store, rows: &[FidRow]) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_row = 5; // TODO: derive this from number of fields in FidRow rather than a hardcoded size
+        let max_rows_per_batch = MAX_PARAMS / params_per_row;
 
-    for chunk in rows.chunks(max_rows_per_batch) {
-        let mut query_builder = QueryBuilder::new(
+        for chunk in rows.chunks(max_rows_per_batch) {
+            let mut query_builder = QueryBuilder::new(
             "INSERT INTO fids (fid, registered_at, chain_event_id, custody_address, recovery_address) ",
         );
 
-        query_builder.push_values(chunk.iter(), |mut b, row| {
-            b.push_bind(row.fid as u32)
-                .push_bind(row.registered_at as u32)
-                .push_bind(&row.chain_event_id)
-                .push_bind(row.custody_address.as_slice())
-                .push_bind(row.recovery_address.as_slice());
-        });
+            query_builder.push_values(chunk.iter(), |mut b, row| {
+                b.push_bind(row.fid as u32)
+                    .push_bind(row.registered_at as u32)
+                    .push_bind(&row.chain_event_id)
+                    .push_bind(row.custody_address.as_slice())
+                    .push_bind(row.recovery_address.as_slice());
+            });
 
-        query_builder.push(" ON CONFLICT (fid) DO NOTHING");
+            query_builder.push(" ON CONFLICT (fid) DO NOTHING");
 
-        let query = query_builder.build();
+            let query = query_builder.build();
 
-        let mut conn = store.conn.acquire().await.unwrap();
-        query.execute(&mut *conn).await?;
+            let mut conn = store.conn.acquire().await.unwrap();
+            query.execute(&mut *conn).await?;
+        }
+
+        Ok(())
     }
 
-    Ok(())
+    pub async fn bulk_transfer(
+        store: &crate::Store,
+        transfers: &[FidTransfer],
+    ) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_transfer = 2; // Each transfer requires two parameters (fid and custody_address)
+        let max_transfers_per_batch = MAX_PARAMS / params_per_transfer;
+
+        for chunk in transfers.chunks(max_transfers_per_batch) {
+            let mut sql = String::from("UPDATE fids SET custody_address = CASE fid ");
+            let mut params: Vec<(i64, Vec<u8>)> = Vec::new();
+
+            for transfer in chunk {
+                sql.push_str(&format!(" WHEN ? THEN ? "));
+                params.push((
+                    transfer.fid as i64,
+                    transfer.custody_address.clone().to_vec(),
+                ));
+            }
+
+            sql.push_str(" END WHERE fid IN (");
+            sql.push_str(&"?,".repeat(chunk.len()).trim_end_matches(','));
+            sql.push_str(")");
+
+            let mut query = sqlx::query(&sql);
+
+            for (fid, custody_address) in &params {
+                query = query.bind(*fid).bind(custody_address);
+            }
+
+            for transfer in chunk {
+                query = query.bind(transfer.fid as i64);
+            }
+
+            query
+                .execute(&mut *store.conn.acquire().await.unwrap())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    pub async fn bulk_update_recovery_address(
+        store: &crate::Store,
+        updates: &[FidRecoveryUpdate],
+    ) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_update = 2; // Each update requires two parameters (fid and recovery_address)
+        let max_updates_per_batch = MAX_PARAMS / params_per_update;
+
+        for chunk in updates.chunks(max_updates_per_batch) {
+            let mut sql = String::from("UPDATE fids SET recovery_address = CASE fid ");
+            let mut params: Vec<(i64, Vec<u8>)> = Vec::new();
+
+            for update in chunk {
+                sql.push_str(&format!(" WHEN ? THEN ? "));
+                params.push((update.fid as i64, update.recovery_address.clone().to_vec()));
+            }
+
+            sql.push_str(" END WHERE fid IN (");
+            sql.push_str(&"?,".repeat(chunk.len()).trim_end_matches(','));
+            sql.push_str(")");
+
+            let mut query = sqlx::query(&sql);
+
+            for (fid, recovery_address) in &params {
+                query = query.bind(*fid).bind(recovery_address);
+            }
+
+            for update in chunk {
+                query = query.bind(update.fid as i64);
+            }
+
+            query
+                .execute(&mut *store.conn.acquire().await.unwrap())
+                .await?;
+        }
+
+        Ok(())
+    }
 }
 
 pub struct SignerRow {

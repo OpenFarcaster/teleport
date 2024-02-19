@@ -1,5 +1,4 @@
-use crate::utils::read_abi;
-use core::time;
+use crate::utils::{get_logs, get_signature_topic, read_abi};
 use ethers::{
     contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
     core::utils::keccak256,
@@ -8,15 +7,11 @@ use ethers::{
 };
 use std::error::Error;
 use std::sync::Arc;
-use teleport_common::{
-    protobufs::generated::{
-        on_chain_event, IdRegisterEventBody, IdRegisterEventType, OnChainEvent, OnChainEventType,
-    },
-    time::to_farcaster_time,
+use teleport_common::protobufs::generated::{
+    on_chain_event, IdRegisterEventBody, IdRegisterEventType, OnChainEvent, OnChainEventType,
 };
-use teleport_storage::db::{self};
+use teleport_storage::db::{self, FidRecoveryUpdate};
 use teleport_storage::Store;
-use uuid::timestamp;
 
 #[derive(Debug, Clone, EthEvent)]
 struct Register {
@@ -26,6 +21,7 @@ struct Register {
     pub id: U256,
     pub recovery: Address,
 }
+
 #[derive(Debug, Clone, EthEvent)]
 struct Transfer {
     #[ethevent(indexed)]
@@ -60,6 +56,11 @@ pub struct Contract<T> {
     inner: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
+pub const TRANSFER_SIGNATURE: &str = "Transfer(address,address,uint256)";
+pub const REGISTER_SIGNATURE: &str = "Register(address,uint256,address)";
+pub const RECOVERY_SIGNATURE: &str = "Recover(address,address,uint256)";
+pub const CHANGE_RECOVERY_ADDRESS_SIGNATURE: &str = "ChangeRecoveryAddress(uint256,address)";
+
 impl<T: JsonRpcClient + Clone> Contract<T> {
     pub fn new(
         provider: Provider<T>,
@@ -81,14 +82,12 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Register(address,uint256,address)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(REGISTER_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
@@ -152,27 +151,21 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_register_logs(
         &self,
         store: &Store,
-        logs: &[Log],
+        logs: Vec<&Log>,
         chain_id: u32,
         timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {
         let mut fid_rows = Vec::new();
 
-        let start_time = std::time::Instant::now();
+        // This loop is very fast, even though its awaiting every insert, I don't know why...
         for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
             let fid_row = self
                 .process_register_log(store, log, chain_id, *timestamp)
                 .await?;
             fid_rows.push(fid_row);
         }
-        println!(
-            "Processing register logs took: {:.2?}",
-            start_time.elapsed()
-        );
 
-        println!("Number of fid_rows: {}", fid_rows.len());
-
-        db::bulk_insert_fid_rows(store, &fid_rows).await?;
+        db::FidRow::bulk_insert(store, &fid_rows).await?;
         Ok(())
     }
 
@@ -181,25 +174,23 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Transfer(address,address,uint256)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(TRANSFER_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
         Ok(logs)
     }
 
-    pub async fn persist_transfer_log(
+    pub async fn process_transfer_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: Transfer = parse_log(log.clone()).unwrap();
+        timestamp: u32,
+    ) -> Result<db::FidTransfer, Box<dyn Error>> {
+        let parsed_log: Transfer = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
             to: parsed_log.to.to_fixed_bytes().to_vec(),
@@ -225,12 +216,45 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
         event_row.insert(&store).await?;
 
-        db::FidRow::update_custody_address(
-            &store,
-            parsed_log.id.as_u64(),
-            parsed_log.to.to_fixed_bytes(),
-        )
-        .await?;
+        Ok(db::FidTransfer {
+            fid: parsed_log.id.as_u32() as u32,
+            custody_address: parsed_log.to.to_fixed_bytes(),
+        })
+    }
+
+    pub async fn persist_transfer_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let fid_transfer = self
+            .process_transfer_log(store, log, chain_id, timestamp)
+            .await?;
+
+        db::FidRow::transfer(&store, &fid_transfer).await?;
+
+        Ok(())
+    }
+
+    pub async fn persist_many_transfer_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamps: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut fid_transfers = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
+            let fid_transfer = self
+                .process_transfer_log(store, log, chain_id, *timestamp)
+                .await?;
+            fid_transfers.push(fid_transfer);
+        }
+
+        db::FidRow::bulk_transfer(store, &fid_transfers).await?;
 
         Ok(())
     }
@@ -240,24 +264,22 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Recover(address,address,uint256)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(RECOVERY_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
         Ok(logs)
     }
 
-    pub async fn persist_recovery_log(
+    pub async fn process_recovery_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<db::FidTransfer, Box<dyn Error>> {
         let parsed_log: Recover = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
@@ -284,12 +306,46 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
         event_row.insert(&store).await?;
 
-        db::FidRow::update_recovery_address(
-            &store,
-            parsed_log.id.as_u64(),
-            parsed_log.to.to_fixed_bytes(),
-        )
-        .await?;
+        // A recovery's delta is identical to a transfer
+        Ok(db::FidTransfer {
+            fid: parsed_log.id.as_u32(),
+            custody_address: parsed_log.to.to_fixed_bytes(),
+        })
+    }
+
+    pub async fn persist_recovery_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let recovery_update = self
+            .process_recovery_log(store, log, chain_id, timestamp)
+            .await?;
+
+        db::FidRow::transfer(&store, &recovery_update).await?;
+
+        Ok(())
+    }
+
+    pub async fn persist_many_recovery_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamps: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut recoveries = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
+            let recovery = self
+                .process_recovery_log(store, log, chain_id, *timestamp)
+                .await?;
+            recoveries.push(recovery);
+        }
+
+        db::FidRow::bulk_transfer(&store, &recoveries).await?;
 
         Ok(())
     }
@@ -299,25 +355,23 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "ChangeRecoveryAddress(uint256,address)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(CHANGE_RECOVERY_ADDRESS_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
 
-    pub async fn persist_change_recovery_address_log(
+    pub async fn process_change_recovery_address_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<db::FidRecoveryUpdate, Box<dyn Error>> {
         let parsed_log: ChangeRecoveryAddress = parse_log(log.clone())?;
 
         let body = IdRegisterEventBody {
@@ -344,12 +398,44 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
         event_row.insert(&store).await?;
 
-        db::FidRow::update_recovery_address(
-            &store,
-            parsed_log.id.as_u64(),
-            parsed_log.recovery.to_fixed_bytes(),
-        )
-        .await?;
+        Ok(FidRecoveryUpdate {
+            fid: parsed_log.id.as_u32(),
+            recovery_address: parsed_log.recovery.to_fixed_bytes(),
+        })
+    }
+
+    pub async fn persist_change_recovery_address_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let fid_recovery_update = self
+            .process_change_recovery_address_log(store, log, chain_id, timestamp)
+            .await?;
+        db::FidRow::update_recovery_address(&store, &fid_recovery_update).await?;
+
+        Ok(())
+    }
+
+    pub async fn persist_many_change_recovery_address_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamps: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut recovery_address_updates = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
+            let update = self
+                .process_change_recovery_address_log(store, log, chain_id, *timestamp)
+                .await?;
+            recovery_address_updates.push(update);
+        }
+
+        db::FidRow::bulk_update_recovery_address(&store, &recovery_address_updates).await?;
 
         Ok(())
     }
