@@ -44,6 +44,7 @@ struct Config {
     storage_registry_address: String,
     abi_dir: String,
     indexer_interval: u64,
+    bootstrap_addrs: Vec<String>,
 }
 
 #[tokio::main]
@@ -103,12 +104,11 @@ async fn main() {
 
     log::info!("Public Key: {}", hex::encode(pub_key.to_bytes()));
 
-    let bootstrap_nodes = vec![
-        // Multiaddr::from_str("/ip4/3.17.4.160/tcp/2282").unwrap(),
-        Multiaddr::from_str("/ip4/23.20.92.219/tcp/2282").unwrap(),
-        // Multiaddr::from_str("/ip4/3.223.235.209/tcp/2282").unwrap(),
-        // Multiaddr::from_str("/ip4/52.20.72.19/tcp/2282").unwrap(),
-    ];
+    let bootstrap_nodes = config
+        .bootstrap_addrs
+        .iter()
+        .map(|addr| Multiaddr::from_str(addr).unwrap())
+        .collect();
 
     let id_keypair = libp2p::identity::Keypair::ed25519_from_bytes(&mut secret_key_bytes).unwrap();
 
