@@ -6,7 +6,6 @@ use crate::key_registry;
 use crate::storage_registry;
 use crate::utils::{get_block_timestamp, get_signature_topic};
 use ethers::{
-    core::utils::keccak256,
     providers::{JsonRpcClient, Middleware, Provider},
     types::{BlockNumber, Log, H256},
 };

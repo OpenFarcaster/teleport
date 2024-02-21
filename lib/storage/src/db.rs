@@ -79,6 +79,43 @@ impl ChainEventRow {
         Ok(id)
     }
 
+    pub async fn bulk_insert(
+        store: &crate::Store,
+        rows: &[ChainEventRow],
+    ) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_row = 13; // Number of fields in ChainEventRow
+        let max_rows_per_batch = MAX_PARAMS / params_per_row;
+
+        for chunk in rows.chunks(max_rows_per_batch) {
+            let mut query_builder = QueryBuilder::new(
+                "INSERT INTO chain_events (id, block_timestamp, fid, chain_id, block_number, transaction_index, log_index, type, block_hash, transaction_hash, body, raw) ",
+            );
+
+            query_builder.push_values(chunk.iter(), |mut b, row| {
+                b.push_bind(&row.id)
+                    .push_bind(row.block_timestamp as i64)
+                    .push_bind(row.fid as i64)
+                    .push_bind(row.chain_id as i32)
+                    .push_bind(row.block_number as i32)
+                    .push_bind(row.transaction_index as i32)
+                    .push_bind(row.log_index as i32)
+                    .push_bind(row.r#type as i32)
+                    .push_bind(&row.block_hash)
+                    .push_bind(&row.transaction_hash)
+                    .push_bind(&row.body)
+                    .push_bind(&row.raw);
+            });
+
+            let query = query_builder.build();
+
+            let mut conn = store.conn.acquire().await.unwrap();
+            query.execute(&mut *conn).await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn max_block_number(store: &crate::Store) -> Result<i64, sqlx::Error> {
         let mut conn = store.conn.acquire().await.unwrap();
         let row = sqlx::query_file!("src/queries/max_block_number.sql")
