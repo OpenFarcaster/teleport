@@ -48,10 +48,10 @@ struct Config {
 
 #[tokio::main]
 async fn main() {
-    env_logger::init();
-
     // Load env vars from .env file
     dotenv().ok();
+
+    env_logger::init();
 
     // Load configuration from a TOML file and override with environment variables
     let config: Config = Figment::new()
