@@ -369,6 +369,39 @@ impl SignerRow {
         Ok(())
     }
 
+    pub async fn bulk_insert(store: &crate::Store, rows: &[SignerRow]) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_row = 11;
+        let max_rows_per_batch = MAX_PARAMS / params_per_row;
+
+        for chunk in rows.chunks(max_rows_per_batch) {
+            let mut query_builder = QueryBuilder::new(
+                "INSERT INTO signers (id, added_at, removed_at, fid, requester_fid, add_chain_event_id, remove_chain_event_id, key_type, metadata_type, key, metadata) ",
+            );
+
+            query_builder.push_values(chunk.iter(), |mut b, row| {
+                b.push_bind(&row.id)
+                    .push_bind(row.added_at.clone())
+                    .push_bind(row.removed_at.clone())
+                    .push_bind(row.fid as i64)
+                    .push_bind(row.requester_fid as i64)
+                    .push_bind(&row.add_chain_event_id)
+                    .push_bind(&row.remove_chain_event_id)
+                    .push_bind(row.key_type as i64)
+                    .push_bind(row.metadata_type as i64)
+                    .push_bind(&row.key)
+                    .push_bind(&row.metadata);
+            });
+
+            let query = query_builder.build();
+
+            let mut conn = store.conn.acquire().await.unwrap();
+            query.execute(&mut *conn).await?;
+        }
+
+        Ok(())
+    }
+
     pub async fn update_remove_chain_event(
         store: &crate::Store,
         key: Vec<u8>,
@@ -385,6 +418,44 @@ impl SignerRow {
         .await?;
 
         Ok(result.rows_affected())
+    }
+
+    pub async fn bulk_update_remove_chain_event(
+        store: &crate::Store,
+        updates: &[(Vec<u8>, String)], // Tuple of (key, remove_chain_event_id)
+    ) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_update = 2; // Each update requires two parameters (key and remove_chain_event_id)
+        let max_updates_per_batch = MAX_PARAMS / params_per_update;
+
+        for chunk in updates.chunks(max_updates_per_batch) {
+            let mut sql = String::from("UPDATE signers SET remove_chain_event_id = CASE key ");
+            let mut params: Vec<(Vec<u8>, String)> = Vec::new();
+
+            for (key, remove_chain_event_id) in chunk {
+                sql.push_str(&format!("WHEN ? THEN ? "));
+                params.push((key.clone(), remove_chain_event_id.clone()));
+            }
+
+            sql.push_str("END WHERE key IN (");
+            sql.push_str(&"?,".repeat(chunk.len()).trim_end_matches(','));
+            sql.push_str(")");
+
+            let mut query = sqlx::query(&sql);
+
+            for (key, remove_chain_event_id) in &params {
+                query = query.bind(key).bind(remove_chain_event_id);
+            }
+
+            for (key, _) in chunk {
+                query = query.bind(key);
+            }
+
+            let mut conn = store.conn.acquire().await.unwrap();
+            query.execute(&mut *conn).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn get_by_key(

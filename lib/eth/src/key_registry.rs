@@ -1,4 +1,4 @@
-use crate::utils::read_abi;
+use crate::utils::{get_logs, get_signature_topic, read_abi};
 use alloy_dyn_abi::DynSolType;
 use ethers::{
     contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
@@ -9,7 +9,6 @@ use ethers::{
 use log;
 use serde::{Deserialize, Serialize};
 use serde_json::{self};
-use sqlx::Row;
 use std::error::Error;
 use std::sync::Arc;
 use teleport_common::protobufs::generated::{
@@ -54,6 +53,11 @@ struct SignerRequestMetadata {
     pub deadline: u64,
 }
 
+pub const ADD_SIGNER_SIGNATURE: &str = "Add(uint256,uint32,bytes,bytes,uint8,bytes)";
+pub const REMOVE_SIGNER_SIGNATURE: &str = "Remove(uint256,bytes,bytes)";
+pub const ADMIN_RESET_SIGNATURE: &str = "AdminReset(uint256,bytes,bytes)";
+pub const MIGRATED_SIGNATURE: &str = "Migrated(uint256)";
+
 impl<T: JsonRpcClient + Clone> Contract<T> {
     pub fn new(
         provider: Provider<T>,
@@ -75,14 +79,12 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Add(uint256,uint32,bytes,bytes,uint8,bytes)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(ADD_SIGNER_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
@@ -127,16 +129,14 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         }
     }
 
-    pub async fn persist_add_log(
+    pub async fn process_add_log(
         &self,
-        store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<(db::SignerRow, db::ChainEventRow), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes()).as_u64();
         let key_type = U256::from_big_endian(log.topics[2].as_bytes()).as_u32();
-        let key_hash = H256::from_slice(&log.topics[3].as_bytes());
 
         let key = H256::from_slice(&log.data[128..160]); // 160
         let key_bytes = key.as_bytes();
@@ -171,20 +171,32 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        let event_id = event_row.insert(&store).await?;
 
-        // store signer in db
+        // prepare signer for db
         let signer = db::SignerRow::new(
             fid,
             signer_request.request_fid,
-            event_id,
+            event_row.id.clone(),
             None,
             key_type as i64,
             metadata_type as i64,
             key_bytes.to_vec(),
             metadata_json.to_string(),
         );
-        let result = signer.insert(&store).await;
+
+        Ok((signer, event_row))
+    }
+
+    pub async fn persist_add_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let (signer_row, event_row) = self.process_add_log(log, chain_id, timestamp).await?;
+        event_row.insert(&store).await?;
+        let result = signer_row.insert(&store).await;
         if let Err(sqlx::error::Error::Database(e)) = &result {
             if e.is_unique_violation() {
                 log::warn!("signer already exists, skipping");
@@ -196,32 +208,50 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         Ok(())
     }
 
+    pub async fn persist_many_add_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamp: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut signer_rows = Vec::new();
+        let mut event_rows = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamp.iter()) {
+            let (signer_row, event_row) = self.process_add_log(log, chain_id, *timestamp).await?;
+            signer_rows.push(signer_row);
+            event_rows.push(event_row);
+        }
+
+        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
+        db::SignerRow::bulk_insert(store, &signer_rows).await?;
+
+        Ok(())
+    }
+
     pub async fn get_remove_logs(
         &self,
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Remove(uint256,bytes,bytes)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(REMOVE_SIGNER_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
 
-    /// Hubs listen for this, validate that keyType == 1 and keyBytes exists in db.
-    /// keyBytes is marked as removed, messages signed by keyBytes with `fid` are invalid (todo).
-    pub async fn persist_remove_log(
+    pub async fn process_remove_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<(Vec<u8>, db::ChainEventRow), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes());
         let key_hash = Address::from(log.topics[2]);
         log::info!(
@@ -262,9 +292,48 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        let event_id = event_row.insert(&store).await.unwrap();
+        Ok((key_bytes.to_vec(), event_row))
+    }
 
-        db::SignerRow::update_remove_chain_event(&store, key_bytes.to_vec(), event_id).await?;
+    /// Hubs listen for this, validate that keyType == 1 and keyBytes exists in db.
+    /// keyBytes is marked as removed, messages signed by keyBytes with `fid` are invalid (todo).
+    pub async fn persist_remove_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let (key_bytes, event_row) = self
+            .process_remove_log(store, log, chain_id, timestamp)
+            .await?;
+
+        event_row.insert(store).await?;
+        db::SignerRow::update_remove_chain_event(&store, key_bytes.to_vec(), event_row.id).await?;
+
+        Ok(())
+    }
+
+    pub async fn persist_many_remove_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamp: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut updates: Vec<(Vec<u8>, String)> = Vec::new();
+        let mut event_rows = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamp.iter()) {
+            let (key_bytes, event_row) = self
+                .process_remove_log(store, log, chain_id, *timestamp)
+                .await?;
+            updates.push((key_bytes, event_row.id.clone()));
+            event_rows.push(event_row);
+        }
+
+        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
+        db::SignerRow::bulk_update_remove_chain_event(store, &updates).await?;
 
         Ok(())
     }
@@ -274,28 +343,23 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "AdminReset(uint256,bytes,bytes)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(ADMIN_RESET_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
 
-    // validate that keyType == 1 and that keyBytes exists in db.
-    // these keyBytes is no longer tracked, messages signed by keyBytes with `fid` are invalid,
-    // dropped immediately and not accepted (todo)
-    pub async fn persist_admin_reset_log(
+    pub async fn process_admin_reset_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<(Vec<u8>, db::ChainEventRow), Box<dyn Error>> {
         let fid = U256::from_big_endian(log.topics[1].as_bytes());
         let key_hash = Address::from(log.topics[2]);
         log::info!(
@@ -334,7 +398,52 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
+
+        Ok((key_bytes.to_vec(), event_row))
+    }
+
+    // validate that keyType == 1 and that keyBytes exists in db.
+    // these keyBytes is no longer tracked, messages signed by keyBytes with `fid` are invalid,
+    // dropped immediately and not accepted (todo)
+    pub async fn persist_admin_reset_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let (_, event_row) = self
+            .process_admin_reset_log(store, log, chain_id, timestamp)
+            .await?;
         event_row.insert(&store).await?;
+
+        // TODO: invalidate keyBytes and messages signed by these keyBytes
+
+        Ok(())
+    }
+
+    // validate that keyType == 1 and that keyBytes exists in db.
+    // these keyBytes is no longer tracked, messages signed by keyBytes with `fid` are invalid,
+    // dropped immediately and not accepted (todo)
+    pub async fn persist_many_admin_reset_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamp: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut updates: Vec<(Vec<u8>, String)> = Vec::new();
+        let mut event_rows = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamp.iter()) {
+            let (key_bytes, event_row) = self
+                .process_admin_reset_log(store, log, chain_id, *timestamp)
+                .await?;
+            updates.push((key_bytes, event_row.id.clone()));
+            event_rows.push(event_row);
+        }
+
+        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
 
         // TODO: invalidate keyBytes and messages signed by these keyBytes
 
@@ -346,25 +455,23 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Migrated(uint256)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(MIGRATED_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
 
-    pub async fn persist_migrated_log(
+    pub async fn process_migrated_log(
         &self,
         store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<db::ChainEventRow, Box<dyn Error>> {
         let parsed_log: Migrated = parse_log(log.clone()).unwrap();
         let body = SignerMigratedEventBody {
             migrated_at: parsed_log.keysMigratedAt.as_u64() as u32,
@@ -387,7 +494,50 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
+
+        Ok(event_row)
+    }
+
+    pub async fn persist_migrated_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let event_row = self
+            .process_migrated_log(store, log, chain_id, timestamp)
+            .await?;
+
         event_row.insert(&store).await?;
+
+        /*
+        TODO
+        1. Stop accepting Farcaster Signer messages with a timestamp >= keysMigratedAt.
+        2. After the grace period (24 hours), stop accepting all Farcaster Signer messages.
+        3. Drop any messages created by off-chain Farcaster Signers whose pub key was not emitted as an Add event.
+        */
+
+        Ok(())
+    }
+
+    pub async fn persist_many_migrated_logs(
+        &self,
+        store: &Store,
+        logs: Vec<&Log>,
+        chain_id: u32,
+        timestamp: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut event_rows = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamp.iter()) {
+            let event_row = self
+                .process_migrated_log(store, log, chain_id, *timestamp)
+                .await?;
+            event_rows.push(event_row);
+        }
+
+        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
 
         /*
         TODO
