@@ -529,8 +529,9 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
 
     pub async fn sync(&mut self, start_block: u64, end_block: u64) -> Result<(), Box<dyn Error>> {
         let mut current_block = start_block;
+        let start_time = std::time::Instant::now();
 
-        log::info!(
+        log::debug!(
             "syncing events from block {} to {}",
             current_block,
             end_block
@@ -540,11 +541,23 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         while current_block <= end_block {
             let percent_complete = (current_block - FARCASTER_START_BLOCK) as f64
                 / (end_block - FARCASTER_START_BLOCK) as f64;
-            // Adding a progress bar
-            let bar_width = 50;
+
+            let bar_width = 20;
             let progress = (percent_complete * bar_width as f64).round() as usize;
             let bar: String = "=".repeat(progress) + ">" + &" ".repeat(bar_width - progress - 1);
-            log::info!("Syncing [{}] {:.2}%", bar, percent_complete * 100.0);
+
+            let elapsed_time = start_time.elapsed().as_secs();
+            let rate_of_progress = (current_block - start_block) as f64 / elapsed_time as f64; // blocks per second
+            let total_blocks = (end_block - start_block) as f64;
+            let estimated_total_time = total_blocks / rate_of_progress; // total estimated time in seconds
+            let time_remaining = estimated_total_time - elapsed_time as f64; // remaining time in seconds
+
+            log::info!(
+                "Syncing [{}] {:.2}% | ~{:.2} seconds remaining",
+                bar,
+                percent_complete * 100.0,
+                time_remaining
+            );
 
             // Clear block timestamp cache to avoid overloading it with useless data
             self.block_timestamp_cache.clear();
