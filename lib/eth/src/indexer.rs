@@ -31,7 +31,6 @@ pub struct Indexer<T> {
     id_registry: id_registry::Contract<T>,
     key_registry: key_registry::Contract<T>,
     storage_registry: storage_registry::Contract<T>,
-    block_timestamp_cache: HashMap<H256, i64>,
 }
 
 impl<T: JsonRpcClient + Clone> Indexer<T> {
@@ -59,7 +58,6 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             storage_reg_address,
             format!("{}/StorageRegistry.json", abi_dir),
         )?;
-        let block_timestamp_cache = HashMap::new();
 
         Ok(Indexer {
             store,
@@ -68,7 +66,6 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             key_registry,
             storage_registry,
             chain_id,
-            block_timestamp_cache,
         })
     }
 
@@ -90,13 +87,13 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
     }
 
     pub async fn get_block_timestamp(&mut self, block_hash: H256) -> Result<u32, Box<dyn Error>> {
-        if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
-            return Ok(*timestamp as u32);
-        }
+        // if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
+        //     return Ok(*timestamp as u32);
+        // }
 
         let block = self.provider.get_block(block_hash).await?.unwrap();
-        let timestamp = block.timestamp.as_u32().into();
-        self.block_timestamp_cache.insert(block_hash, timestamp);
+        let timestamp: u32 = block.timestamp.as_u32().into();
+        // self.block_timestamp_cache.insert(block_hash, timestamp);
         Ok(timestamp as u32)
     }
 
@@ -193,11 +190,34 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             timestamps.insert(result.0, result.1);
         }
         log::info!(
-            "Awaiting and nserting timestamps took: {:?}",
+            "Awaiting and inserting timestamps took: {:?}",
             start_time.elapsed()
         );
 
         Ok(timestamps)
+    }
+
+    async fn filter_event_logs<'a>(&self, logs: &'a [Log], event_signature: &str) -> Vec<&'a Log> {
+        logs.iter()
+            .filter(|log| log.topics.contains(&get_signature_topic(event_signature)))
+            .collect()
+    }
+
+    async fn pair_event_timestamps<'a>(
+        &self,
+        events: Vec<&'a Log>,
+        timestamps_map: &'a HashMap<H256, u32>,
+    ) -> (Vec<&'a Log>, Vec<u32>) {
+        let mut timestamps = Vec::new();
+        for log in &events {
+            if let Some(block_hash) = log.block_hash {
+                if let Some(timestamp) = timestamps_map.get(&block_hash) {
+                    timestamps.push(*timestamp);
+                }
+            }
+        }
+
+        (events, timestamps)
     }
 
     async fn sync_register_logs(
@@ -205,22 +225,11 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let register_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(REGISTER_SIGNATURE))
-            })
-            .collect();
+        let register_logs = self.filter_event_logs(logs, REGISTER_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &register_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (register_logs, timestamps) = self
+            .pair_event_timestamps(register_logs, timestamps_map)
+            .await;
 
         self.id_registry
             .persist_many_register_logs(&self.store, register_logs, self.chain_id, &timestamps)
@@ -235,22 +244,11 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let transfer_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(TRANSFER_SIGNATURE))
-            })
-            .collect();
+        let transfer_logs = self.filter_event_logs(logs, TRANSFER_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &transfer_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (transfer_logs, timestamps) = self
+            .pair_event_timestamps(transfer_logs, timestamps_map)
+            .await;
 
         self.id_registry
             .persist_many_transfer_logs(&self.store, transfer_logs, self.chain_id, &timestamps)
@@ -265,22 +263,11 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let recovery_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(RECOVERY_SIGNATURE))
-            })
-            .collect();
+        let recovery_logs = self.filter_event_logs(logs, RECOVERY_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &recovery_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (recovery_logs, timestamps) = self
+            .pair_event_timestamps(recovery_logs, timestamps_map)
+            .await;
 
         self.id_registry
             .persist_many_recovery_logs(&self.store, recovery_logs, self.chain_id, &timestamps)
@@ -295,22 +282,13 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let change_recovery_address_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(CHANGE_RECOVERY_ADDRESS_SIGNATURE))
-            })
-            .collect();
+        let change_recovery_address_logs = self
+            .filter_event_logs(logs, CHANGE_RECOVERY_ADDRESS_SIGNATURE)
+            .await;
 
-        let mut timestamps = Vec::new();
-        for log in &change_recovery_address_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (change_recovery_address_logs, timestamps) = self
+            .pair_event_timestamps(change_recovery_address_logs, timestamps_map)
+            .await;
 
         self.id_registry
             .persist_many_change_recovery_address_logs(
@@ -330,22 +308,9 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let add_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(ADD_SIGNER_SIGNATURE))
-            })
-            .collect();
+        let add_logs = self.filter_event_logs(logs, ADD_SIGNER_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &add_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (add_logs, timestamps) = self.pair_event_timestamps(add_logs, timestamps_map).await;
 
         self.key_registry
             .persist_many_add_logs(&self.store, add_logs, self.chain_id, &timestamps)
@@ -360,22 +325,11 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let remove_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(REMOVE_SIGNER_SIGNATURE))
-            })
-            .collect();
+        let remove_logs = self.filter_event_logs(logs, REMOVE_SIGNER_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &remove_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (remove_logs, timestamps) = self
+            .pair_event_timestamps(remove_logs, timestamps_map)
+            .await;
 
         self.key_registry
             .persist_many_remove_logs(&self.store, remove_logs, self.chain_id, &timestamps)
@@ -390,22 +344,11 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let admin_reset_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(ADMIN_RESET_SIGNATURE))
-            })
-            .collect();
+        let admin_reset_logs = self.filter_event_logs(logs, ADMIN_RESET_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &admin_reset_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (admin_reset_logs, timestamps) = self
+            .pair_event_timestamps(admin_reset_logs, timestamps_map)
+            .await;
 
         self.key_registry
             .persist_many_admin_reset_logs(
@@ -425,22 +368,11 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         logs: &Vec<Log>,
         timestamps_map: &HashMap<H256, u32>,
     ) -> Result<(), Box<dyn Error>> {
-        let migrated_logs: Vec<&Log> = logs
-            .iter()
-            .filter(|log| {
-                log.topics
-                    .contains(&get_signature_topic(MIGRATED_SIGNATURE))
-            })
-            .collect();
+        let migrated_logs = self.filter_event_logs(logs, MIGRATED_SIGNATURE).await;
 
-        let mut timestamps = Vec::new();
-        for log in &migrated_logs {
-            if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
-            }
-        }
+        let (migrated_logs, timestamps) = self
+            .pair_event_timestamps(migrated_logs, timestamps_map)
+            .await;
 
         self.key_registry
             .persist_many_migrated_logs(&self.store, migrated_logs, self.chain_id, &timestamps)
@@ -558,9 +490,6 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
                 percent_complete * 100.0,
                 time_remaining
             );
-
-            // Clear block timestamp cache to avoid overloading it with useless data
-            self.block_timestamp_cache.clear();
 
             let start = current_block;
             let end = current_block + BLOCK_INTERVAL;
