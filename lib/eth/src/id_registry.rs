@@ -153,21 +153,40 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_register_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {
         let mut fid_rows = Vec::new();
         let mut event_rows = Vec::new();
 
+        let start_time = std::time::Instant::now();
         for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
             let (fid_row, event_row) = self.process_register_log(log, chain_id, *timestamp).await?;
             fid_rows.push(fid_row);
             event_rows.push(event_row);
         }
+        let elapsed_time = start_time.elapsed();
+        log::info!(
+            "Processing register logs took {} seconds",
+            elapsed_time.as_secs()
+        );
 
+        let start_time_event_rows = std::time::Instant::now();
         db::ChainEventRow::bulk_insert(store, &event_rows).await?;
+        log::info!(
+            "bulk_insert for {} event_rows took {} seconds",
+            event_rows.len(),
+            start_time_event_rows.elapsed().as_secs()
+        );
+
+        let start_time_fid_rows = std::time::Instant::now();
         db::FidRow::bulk_insert(store, &fid_rows).await?;
+        log::info!(
+            "bulk_insert for {} fid_rows took {} seconds",
+            fid_rows.len(),
+            start_time_fid_rows.elapsed().as_secs()
+        );
 
         Ok(())
     }
@@ -243,7 +262,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_transfer_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {
@@ -337,7 +356,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_recovery_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {
@@ -432,7 +451,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_change_recovery_address_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {

@@ -31,7 +31,7 @@ pub async fn get_block_timestamp<T: JsonRpcClient + Clone>(
                 // Retry after 250ms when rate limit hit
                 // This is a temporary solution until we build a custom Provider implementation with native retries
                 if e.to_string().contains("429") {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     continue;
                 } else {
                     return Err(e.into());

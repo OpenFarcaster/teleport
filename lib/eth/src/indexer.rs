@@ -21,8 +21,19 @@ use tokio;
 // todo: Is this right? IdRegistry seems to be deployed at 108869029u64
 // const FARCASTER_START_BLOCK: u64 = 108864739u64;
 const FARCASTER_START_BLOCK: u64 = 111816370u64;
-// Number of blocks to read at a time
+// Number of blocks to read at a time (max 2000)
 const BLOCK_INTERVAL: u64 = 2000;
+
+struct CollectedLogs {
+    register: Vec<Log>,
+    transfer: Vec<Log>,
+    recovery: Vec<Log>,
+    change_recovery_address: Vec<Log>,
+    add: Vec<Log>,
+    remove: Vec<Log>,
+    admin_reset: Vec<Log>,
+    migrated: Vec<Log>,
+}
 
 pub struct Indexer<T> {
     store: Store,
@@ -31,6 +42,7 @@ pub struct Indexer<T> {
     id_registry: id_registry::Contract<T>,
     key_registry: key_registry::Contract<T>,
     storage_registry: storage_registry::Contract<T>,
+    block_timestamp_cache: HashMap<H256, u32>,
 }
 
 impl<T: JsonRpcClient + Clone> Indexer<T> {
@@ -66,6 +78,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             key_registry,
             storage_registry,
             chain_id,
+            block_timestamp_cache: HashMap::new(),
         })
     }
 
@@ -87,21 +100,20 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
     }
 
     pub async fn get_block_timestamp(&mut self, block_hash: H256) -> Result<u32, Box<dyn Error>> {
-        // if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
-        //     return Ok(*timestamp as u32);
-        // }
+        if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
+            return Ok(*timestamp as u32);
+        }
 
-        let block = self.provider.get_block(block_hash).await?.unwrap();
-        let timestamp: u32 = block.timestamp.as_u32().into();
-        // self.block_timestamp_cache.insert(block_hash, timestamp);
-        Ok(timestamp as u32)
+        let timestamp = get_block_timestamp(self.provider.clone(), block_hash).await?;
+        self.block_timestamp_cache.insert(block_hash, timestamp);
+        Ok(timestamp)
     }
 
     async fn collect_logs(
         &self,
         start_block: u64,
         end_block: u64,
-    ) -> Result<Vec<Log>, Box<dyn Error>> {
+    ) -> Result<CollectedLogs, Box<dyn Error>> {
         let register_future = self.id_registry.get_register_logs(start_block, end_block);
         let transfer_future = self.id_registry.get_transfer_logs(start_block, end_block);
         let recovery_future = self.id_registry.get_recovery_logs(start_block, end_block);
@@ -148,107 +160,69 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             // deprecation_timestamp_future
         )?;
 
-        let mut collected_logs = Vec::new();
-
-        collected_logs.extend(register_logs);
-        collected_logs.extend(transfer_logs);
-        collected_logs.extend(recovery_logs);
-        collected_logs.extend(change_recovery_address_logs);
-        collected_logs.extend(add_logs);
-        collected_logs.extend(remove_logs);
-        collected_logs.extend(admin_reset_logs);
-        collected_logs.extend(migrated_logs);
-        // collected_logs.extend(rent_logs);
-        // collected_logs.extend(set_max_units_logs);
-        // collected_logs.extend(deprecation_timestamp_logs);
-
-        Ok(collected_logs)
+        Ok(CollectedLogs {
+            register: register_logs,
+            transfer: transfer_logs,
+            recovery: recovery_logs,
+            change_recovery_address: change_recovery_address_logs,
+            add: add_logs,
+            remove: remove_logs,
+            admin_reset: admin_reset_logs,
+            migrated: migrated_logs,
+        })
     }
 
-    async fn collect_timestamps(
-        &self,
-        logs: &Vec<Log>,
-    ) -> Result<HashMap<H256, u32>, Box<dyn Error>> {
-        let unique_block_hashes: HashSet<H256> =
-            logs.iter().filter_map(|log| log.block_hash).collect();
-        let mut timestamps = HashMap::new();
-
-        let timestamp_futures: Vec<_> = unique_block_hashes
+    async fn fetch_event_timestamps(&mut self, events: Vec<Log>) -> (Vec<Log>, Vec<u32>) {
+        let futures: Vec<_> = events
             .iter()
-            .map(|hash| {
-                let provider = self.provider.clone();
+            .filter_map(|log| log.block_hash)
+            .map(|block_hash| {
+                let provider = self.provider.clone(); // Clone provider to move into the async block
+                let block_timestamp_cache = &self.block_timestamp_cache; // Borrow block_timestamp_cache mutably
                 async move {
-                    let timestamp = get_block_timestamp(provider, *hash).await;
-                    (*hash, timestamp.unwrap())
+                    if let Some(timestamp) = block_timestamp_cache.get(&block_hash) {
+                        return Ok::<u32, Box<dyn Error>>(*timestamp);
+                    }
+                    let timestamp = get_block_timestamp(provider, block_hash).await;
+                    timestamp
                 }
             })
             .collect();
 
-        let start_time = std::time::Instant::now();
-        // This will typically be slower the more timestamps there are due to RPC rate limits
-        for result in join_all(timestamp_futures).await {
-            timestamps.insert(result.0, result.1);
-        }
-        log::info!(
-            "Awaiting and inserting timestamps took: {:?}",
-            start_time.elapsed()
-        );
+        let timestamps: Vec<u32> = futures::future::join_all(futures)
+            .await
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect();
 
-        Ok(timestamps)
-    }
-
-    async fn filter_event_logs<'a>(&self, logs: &'a [Log], event_signature: &str) -> Vec<&'a Log> {
-        logs.iter()
-            .filter(|log| log.topics.contains(&get_signature_topic(event_signature)))
-            .collect()
-    }
-
-    async fn pair_event_timestamps<'a>(
-        &self,
-        events: Vec<&'a Log>,
-        timestamps_map: &'a HashMap<H256, u32>,
-    ) -> (Vec<&'a Log>, Vec<u32>) {
-        let mut timestamps = Vec::new();
-        for log in &events {
+        for (log, timestamp) in events.iter().zip(timestamps.iter()) {
             if let Some(block_hash) = log.block_hash {
-                if let Some(timestamp) = timestamps_map.get(&block_hash) {
-                    timestamps.push(*timestamp);
-                }
+                self.block_timestamp_cache.insert(block_hash, *timestamp);
             }
         }
 
         (events, timestamps)
     }
 
-    async fn sync_register_logs(
-        &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
-    ) -> Result<(), Box<dyn Error>> {
-        let register_logs = self.filter_event_logs(logs, REGISTER_SIGNATURE).await;
+    async fn sync_register_logs(&mut self, register_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let fetch_start = std::time::Instant::now();
+        let (register_logs, timestamps) = self.fetch_event_timestamps(register_logs).await;
+        let fetch_duration = fetch_start.elapsed();
+        println!("Fetching event timestamps took {:?}", fetch_duration);
 
-        let (register_logs, timestamps) = self
-            .pair_event_timestamps(register_logs, timestamps_map)
-            .await;
-
+        let persist_start = std::time::Instant::now();
         self.id_registry
             .persist_many_register_logs(&self.store, register_logs, self.chain_id, &timestamps)
             .await
             .unwrap();
+        let persist_duration = persist_start.elapsed();
+        println!("Persisting register logs took {:?}", persist_duration);
 
         Ok(())
     }
 
-    async fn sync_transfer_logs(
-        &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
-    ) -> Result<(), Box<dyn Error>> {
-        let transfer_logs = self.filter_event_logs(logs, TRANSFER_SIGNATURE).await;
-
-        let (transfer_logs, timestamps) = self
-            .pair_event_timestamps(transfer_logs, timestamps_map)
-            .await;
+    async fn sync_transfer_logs(&mut self, transfer_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let (transfer_logs, timestamps) = self.fetch_event_timestamps(transfer_logs).await;
 
         self.id_registry
             .persist_many_transfer_logs(&self.store, transfer_logs, self.chain_id, &timestamps)
@@ -258,16 +232,8 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(())
     }
 
-    async fn sync_recovery_logs(
-        &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
-    ) -> Result<(), Box<dyn Error>> {
-        let recovery_logs = self.filter_event_logs(logs, RECOVERY_SIGNATURE).await;
-
-        let (recovery_logs, timestamps) = self
-            .pair_event_timestamps(recovery_logs, timestamps_map)
-            .await;
+    async fn sync_recovery_logs(&mut self, recovery_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let (recovery_logs, timestamps) = self.fetch_event_timestamps(recovery_logs).await;
 
         self.id_registry
             .persist_many_recovery_logs(&self.store, recovery_logs, self.chain_id, &timestamps)
@@ -279,15 +245,10 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
 
     async fn sync_change_recovery_address_logs(
         &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
+        change_recovery_address_logs: Vec<Log>,
     ) -> Result<(), Box<dyn Error>> {
-        let change_recovery_address_logs = self
-            .filter_event_logs(logs, CHANGE_RECOVERY_ADDRESS_SIGNATURE)
-            .await;
-
         let (change_recovery_address_logs, timestamps) = self
-            .pair_event_timestamps(change_recovery_address_logs, timestamps_map)
+            .fetch_event_timestamps(change_recovery_address_logs)
             .await;
 
         self.id_registry
@@ -303,14 +264,8 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(())
     }
 
-    async fn sync_add_logs(
-        &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
-    ) -> Result<(), Box<dyn Error>> {
-        let add_logs = self.filter_event_logs(logs, ADD_SIGNER_SIGNATURE).await;
-
-        let (add_logs, timestamps) = self.pair_event_timestamps(add_logs, timestamps_map).await;
+    async fn sync_add_logs(&mut self, add_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let (add_logs, timestamps) = self.fetch_event_timestamps(add_logs).await;
 
         self.key_registry
             .persist_many_add_logs(&self.store, add_logs, self.chain_id, &timestamps)
@@ -320,16 +275,8 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(())
     }
 
-    async fn sync_remove_logs(
-        &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
-    ) -> Result<(), Box<dyn Error>> {
-        let remove_logs = self.filter_event_logs(logs, REMOVE_SIGNER_SIGNATURE).await;
-
-        let (remove_logs, timestamps) = self
-            .pair_event_timestamps(remove_logs, timestamps_map)
-            .await;
+    async fn sync_remove_logs(&mut self, remove_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let (remove_logs, timestamps) = self.fetch_event_timestamps(remove_logs).await;
 
         self.key_registry
             .persist_many_remove_logs(&self.store, remove_logs, self.chain_id, &timestamps)
@@ -341,14 +288,9 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
 
     async fn sync_admin_reset_logs(
         &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
+        admin_reset_logs: Vec<Log>,
     ) -> Result<(), Box<dyn Error>> {
-        let admin_reset_logs = self.filter_event_logs(logs, ADMIN_RESET_SIGNATURE).await;
-
-        let (admin_reset_logs, timestamps) = self
-            .pair_event_timestamps(admin_reset_logs, timestamps_map)
-            .await;
+        let (admin_reset_logs, timestamps) = self.fetch_event_timestamps(admin_reset_logs).await;
 
         self.key_registry
             .persist_many_admin_reset_logs(
@@ -363,16 +305,8 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(())
     }
 
-    async fn sync_migrated_logs(
-        &mut self,
-        logs: &Vec<Log>,
-        timestamps_map: &HashMap<H256, u32>,
-    ) -> Result<(), Box<dyn Error>> {
-        let migrated_logs = self.filter_event_logs(logs, MIGRATED_SIGNATURE).await;
-
-        let (migrated_logs, timestamps) = self
-            .pair_event_timestamps(migrated_logs, timestamps_map)
-            .await;
+    async fn sync_migrated_logs(&mut self, migrated_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let (migrated_logs, timestamps) = self.fetch_event_timestamps(migrated_logs).await;
 
         self.key_registry
             .persist_many_migrated_logs(&self.store, migrated_logs, self.chain_id, &timestamps)
@@ -494,29 +428,31 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             let start = current_block;
             let end = current_block + BLOCK_INTERVAL;
 
+            let collect_logs_start = std::time::Instant::now();
             let collected_logs = self.collect_logs(start, end).await?;
-            let timestamps = self.collect_timestamps(&collected_logs).await?;
-
-            println!("Collected {} logs", collected_logs.len());
-            println!("Collected {} timestamps", timestamps.iter().len());
+            log::info!(
+                "collect_logs took {} seconds",
+                collect_logs_start.elapsed().as_secs()
+            );
 
             // id registry logs
-            self.sync_register_logs(&collected_logs, &timestamps)
-                .await?;
-            self.sync_transfer_logs(&collected_logs, &timestamps)
-                .await?;
-            self.sync_recovery_logs(&collected_logs, &timestamps)
-                .await?;
-            self.sync_change_recovery_address_logs(&collected_logs, &timestamps)
+            let sync_start = std::time::Instant::now();
+            self.sync_register_logs(collected_logs.register).await?;
+            log::info!(
+                "sync_register_logs took {} seconds",
+                sync_start.elapsed().as_secs()
+            );
+            self.sync_transfer_logs(collected_logs.transfer).await?;
+            self.sync_recovery_logs(collected_logs.recovery).await?;
+            self.sync_change_recovery_address_logs(collected_logs.change_recovery_address)
                 .await?;
 
             // key registry logs
-            self.sync_add_logs(&collected_logs, &timestamps).await?;
-            self.sync_remove_logs(&collected_logs, &timestamps).await?;
-            self.sync_admin_reset_logs(&collected_logs, &timestamps)
+            self.sync_add_logs(collected_logs.add).await?;
+            self.sync_remove_logs(collected_logs.remove).await?;
+            self.sync_admin_reset_logs(collected_logs.admin_reset)
                 .await?;
-            self.sync_migrated_logs(&collected_logs, &timestamps)
-                .await?;
+            self.sync_migrated_logs(collected_logs.migrated).await?;
 
             // // storage registry logs
             // self.sync_rent_logs(start, end).await?;

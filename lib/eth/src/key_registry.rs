@@ -211,7 +211,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_add_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamp: &[u32],
     ) -> Result<(), Box<dyn Error>> {
@@ -317,7 +317,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_remove_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamp: &[u32],
     ) -> Result<(), Box<dyn Error>> {
@@ -428,7 +428,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_admin_reset_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamp: &[u32],
     ) -> Result<(), Box<dyn Error>> {
@@ -524,7 +524,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
     pub async fn persist_many_migrated_logs(
         &self,
         store: &Store,
-        logs: Vec<&Log>,
+        logs: Vec<Log>,
         chain_id: u32,
         timestamp: &[u32],
     ) -> Result<(), Box<dyn Error>> {
