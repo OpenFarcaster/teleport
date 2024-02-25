@@ -354,7 +354,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         }
     }
 
-    pub async fn sync(&mut self, start_block: u64, _end_block: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn sync(&mut self, start_block: u64, end_block: u64) -> Result<(), Box<dyn Error>> {
         let mut current_block = start_block;
         let start_time = std::time::Instant::now();
 
