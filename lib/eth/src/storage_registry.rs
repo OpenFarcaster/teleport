@@ -1,9 +1,8 @@
-use crate::utils::read_abi;
+use crate::utils::{get_logs, get_signature_topic, read_abi};
 use ethers::{
     contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
-    core::utils::keccak256,
-    providers::{JsonRpcClient, Middleware, Provider},
-    types::{Address, Filter, Log, H256, U256},
+    providers::{JsonRpcClient, Provider},
+    types::{Address, Filter, Log, U256},
 };
 use std::error::Error;
 use std::sync::Arc;
@@ -12,6 +11,10 @@ use teleport_common::protobufs::generated::{
 };
 use teleport_storage::db::{self};
 use teleport_storage::Store;
+
+pub const RENT_SIGNATURE: &str = "Rent(address,uint256,uint256)";
+pub const SET_MAX_UNITS_SIGNATURE: &str = "SetMaxUnits(uint256,uint256)";
+pub const SET_DEPRECATION_TIMESTAMP_SIGNATURE: &str = "SetDeprecationTimestamp(uint256,uint256)";
 
 #[derive(Debug, Clone, EthEvent)]
 struct Rent {
@@ -63,25 +66,22 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "Rent(address,uint256,uint256)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(RENT_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
     }
 
-    pub async fn persist_rent_log(
+    pub async fn process_rent_log(
         &self,
-        store: &Store,
         log: &Log,
         chain_id: u32,
-        timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
+        timestamp: u32,
+    ) -> Result<(db::StorageAllocationRow, db::ChainEventRow), Box<dyn Error>> {
         let parsed_log: Rent = parse_log(log.clone()).unwrap();
         let units = parsed_log.units.as_u32();
         let expiry = parsed_log.units.as_u32() + 395 * 24 * 60 * 60;
@@ -109,12 +109,47 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        event_row.insert(&store).await?;
-
-        // Insert in storage allocation table
         let storage_allocation =
-            db::StorageAllocationRow::new(0, expiry, event_row.id, fid, units, payer);
+            db::StorageAllocationRow::new(0, expiry, event_row.id.clone(), fid, units, payer);
+
+        Ok((storage_allocation, event_row))
+    }
+
+    pub async fn persist_rent_log(
+        &self,
+        store: &Store,
+        log: &Log,
+        chain_id: u32,
+        timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let (storage_allocation, event_row) =
+            self.process_rent_log(log, chain_id, timestamp).await?;
+
+        event_row.insert(&store).await?;
         storage_allocation.insert(&store).await?;
+
+        Ok(())
+    }
+
+    pub async fn persist_many_rent_logs(
+        &self,
+        store: &Store,
+        logs: Vec<Log>,
+        chain_id: u32,
+        timestamps: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        let mut storage_allocations = Vec::new();
+        let mut event_rows = Vec::new();
+
+        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
+            let (storage_allocation, event_row) =
+                self.process_rent_log(log, chain_id, *timestamp).await?;
+            storage_allocations.push(storage_allocation);
+            event_rows.push(event_row);
+        }
+
+        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
+        db::StorageAllocationRow::bulk_insert(store, &storage_allocations).await?;
 
         Ok(())
     }
@@ -124,30 +159,56 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "SetMaxUnits(uint256,uint256)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(SET_MAX_UNITS_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
+    }
+
+    pub async fn process_set_max_units_log(
+        &self,
+        log: &Log,
+        _chain_id: u32,
+        _timestamp: u32,
+    ) -> Result<(), Box<dyn Error>> {
+        let parsed_log: SetMaxUnits = parse_log(log.clone()).unwrap();
+        let _old_max = parsed_log.oldMax.as_u32();
+        let _new_max = parsed_log.newMax.as_u32();
+
+        // TODO: Return proper rows to be stored
+
+        Ok(())
     }
 
     pub async fn persist_set_max_units_log(
         &self,
         _store: &Store,
         log: &Log,
-        _chain_id: u32,
-        _timestamp: i64,
+        chain_id: u32,
+        timestamp: u32,
     ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: SetMaxUnits = parse_log(log.clone()).unwrap();
-        let _old_max = parsed_log.oldMax.as_u32();
-        let _new_max = parsed_log.newMax.as_u32();
+        self.process_set_max_units_log(log, chain_id, timestamp);
 
-        // TODO: store max units in db
+        Ok(())
+    }
+
+    pub async fn persist_many_set_max_units_logs(
+        &self,
+        _store: &Store,
+        logs: Vec<Log>,
+        chain_id: u32,
+        timestamps: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
+            self.process_set_max_units_log(log, chain_id, *timestamp)
+                .await?;
+        }
+
+        // TODO: Store resulting rows in the database
 
         Ok(())
     }
@@ -157,16 +218,24 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         start_block: u64,
         end_block: u64,
     ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let event_signature = "SetDeprecationTimestamp(uint256,uint256)";
-        let topic = H256::from_slice(&keccak256(event_signature));
         let filter = Filter::new()
             .address(self.inner.address())
             .from_block(start_block)
             .to_block(end_block)
-            .topic0(topic);
-        let logs = self.provider.get_logs(&filter).await?;
+            .topic0(get_signature_topic(SET_DEPRECATION_TIMESTAMP_SIGNATURE));
+        let logs = get_logs(self.provider.clone(), &filter).await?;
 
         Ok(logs)
+    }
+
+    async fn process_deprecation_timestamp_log(&self, log: &Log) -> Result<(), Box<dyn Error>> {
+        let parsed_log: SetDeprecationTimestamp = parse_log(log.clone()).unwrap();
+        let _old_timestamp = parsed_log.oldTimestamp.as_u32();
+        let _new_timestamp = parsed_log.newTimestamp.as_u32();
+
+        // TODO: Return proper rows to be stored
+
+        Ok(())
     }
 
     pub async fn persist_deprecation_timestamp_log(
@@ -176,11 +245,26 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         _chain_id: u32,
         _timestamp: i64,
     ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: SetDeprecationTimestamp = parse_log(log.clone()).unwrap();
-        let _old_timestamp = parsed_log.oldTimestamp.as_u32();
-        let _new_timestamp = parsed_log.newTimestamp.as_u32();
+        self.process_deprecation_timestamp_log(log).await?;
 
         // TODO: store deprecation timestamp in db
+
+        Ok(())
+    }
+
+    pub async fn persist_many_deprecation_timestamp_logs(
+        &self,
+        _store: &Store,
+        logs: Vec<Log>,
+        _chain_id: u32,
+        _timestamps: &[u32],
+    ) -> Result<(), Box<dyn Error>> {
+        for log in logs {
+            self.process_deprecation_timestamp_log(&log).await?;
+        }
+
+        // TODO: store deprecation timestamps in db
+
         Ok(())
     }
 }

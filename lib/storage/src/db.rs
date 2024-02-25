@@ -197,7 +197,6 @@ impl FidRow {
             let mut query_builder = QueryBuilder::new(
             "INSERT INTO fids (fid, registered_at, chain_event_id, custody_address, recovery_address) ",
         );
-
             query_builder.push_values(chunk.iter(), |mut b, row| {
                 b.push_bind(row.fid as u32)
                     .push_bind(row.registered_at as u32)
@@ -206,7 +205,7 @@ impl FidRow {
                     .push_bind(row.recovery_address.as_slice());
             });
 
-            query_builder.push(" ON CONFLICT (fid) DO NOTHING");
+            query_builder.push(" ON CONFLICT (fid) DO NOTHING"); // There appear to be duplicate register events...
 
             let query = query_builder.build();
 
@@ -299,6 +298,7 @@ impl FidRow {
     }
 }
 
+#[derive(Debug)]
 pub struct SignerRow {
     pub id: String,
     pub added_at: String,
@@ -392,6 +392,8 @@ impl SignerRow {
                     .push_bind(&row.key)
                     .push_bind(&row.metadata);
             });
+
+            query_builder.push(" ON CONFLICT DO NOTHING");
 
             let query = query_builder.build();
 
@@ -521,6 +523,38 @@ impl StorageAllocationRow {
         )
         .execute(&mut *conn)
         .await?;
+        Ok(())
+    }
+
+    pub async fn bulk_insert(
+        store: &crate::Store,
+        rows: &[StorageAllocationRow],
+    ) -> Result<(), sqlx::Error> {
+        const MAX_PARAMS: usize = 999;
+        let params_per_row = 7; // Number of fields in StorageAllocationRow
+        let max_rows_per_batch = MAX_PARAMS / params_per_row;
+
+        for chunk in rows.chunks(max_rows_per_batch) {
+            let mut query_builder = QueryBuilder::new(
+                "INSERT INTO storage_allocations (id, rented_at, expires_at, chain_event_id, fid, units, payer) ",
+            );
+
+            query_builder.push_values(chunk.iter(), |mut b, row| {
+                b.push_bind(&row.id)
+                    .push_bind(row.rented_at as i64)
+                    .push_bind(row.expires_at as i32)
+                    .push_bind(&row.chain_event_id)
+                    .push_bind(row.fid as i64)
+                    .push_bind(row.units as i32)
+                    .push_bind(&row.payer);
+            });
+
+            let query = query_builder.build();
+
+            let mut conn = store.conn.acquire().await.unwrap();
+            query.execute(&mut *conn).await?;
+        }
+
         Ok(())
     }
 }

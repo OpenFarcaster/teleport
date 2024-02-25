@@ -28,10 +28,10 @@ pub async fn get_block_timestamp<T: JsonRpcClient + Clone>(
             Ok(Some(block)) => break block,
             Ok(None) => return Err("Block not found".into()),
             Err(e) => {
-                // Retry after 250ms when rate limit hit
+                // Retry after 500ms when rate limit hit
                 // This is a temporary solution until we build a custom Provider implementation with native retries
                 if e.to_string().contains("429") {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     continue;
                 } else {
                     return Err(e.into());
@@ -52,10 +52,10 @@ pub async fn get_logs<T: JsonRpcClient + Clone>(
         match provider.get_logs(filter).await {
             Ok(logs) => break logs,
             Err(e) => {
-                // Retry after 250ms when rate limit hit
+                // Retry after 500ms when rate limit hit
                 // This is a temporary solution until we build a custom Provider implementation with native retries
                 if e.to_string().contains("429") {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(250)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                     continue;
                 } else {
                     return Err(e);

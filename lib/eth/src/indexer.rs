@@ -1,19 +1,12 @@
 use crate::id_registry;
-use crate::id_registry::{
-    CHANGE_RECOVERY_ADDRESS_SIGNATURE, RECOVERY_SIGNATURE, REGISTER_SIGNATURE, TRANSFER_SIGNATURE,
-};
-use crate::key_registry::{
-    self, ADD_SIGNER_SIGNATURE, ADMIN_RESET_SIGNATURE, MIGRATED_SIGNATURE, REMOVE_SIGNER_SIGNATURE,
-};
+use crate::key_registry;
 use crate::storage_registry;
-use crate::utils::{get_block_timestamp, get_signature_topic};
+use crate::utils::get_block_timestamp;
 use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::{BlockNumber, Log, H256},
 };
-use futures::future::join_all;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::error::Error;
 use teleport_storage::{db, Store};
 use tokio;
@@ -33,6 +26,9 @@ struct CollectedLogs {
     remove: Vec<Log>,
     admin_reset: Vec<Log>,
     migrated: Vec<Log>,
+    rent: Vec<Log>,
+    set_max_units: Vec<Log>,
+    deprecation_timestamp: Vec<Log>,
 }
 
 pub struct Indexer<T> {
@@ -99,16 +95,6 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(latest_block.number.unwrap().as_u64())
     }
 
-    pub async fn get_block_timestamp(&mut self, block_hash: H256) -> Result<u32, Box<dyn Error>> {
-        if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
-            return Ok(*timestamp as u32);
-        }
-
-        let timestamp = get_block_timestamp(self.provider.clone(), block_hash).await?;
-        self.block_timestamp_cache.insert(block_hash, timestamp);
-        Ok(timestamp)
-    }
-
     async fn collect_logs(
         &self,
         start_block: u64,
@@ -126,13 +112,13 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             .key_registry
             .get_admin_reset_logs(start_block, end_block);
         let migrated_future = self.key_registry.get_migrated_logs(start_block, end_block);
-        // let rent_future = self.storage_registry.get_rent_logs(start_block, end_block);
-        // let set_max_units_future = self
-        //     .storage_registry
-        //     .get_set_max_units_logs(start_block, end_block);
-        // let deprecation_timestamp_future = self
-        //     .storage_registry
-        //     .get_deprecation_timestamp_logs(start_block, end_block);
+        let rent_future = self.storage_registry.get_rent_logs(start_block, end_block);
+        let set_max_units_future = self
+            .storage_registry
+            .get_set_max_units_logs(start_block, end_block);
+        let deprecation_timestamp_future = self
+            .storage_registry
+            .get_deprecation_timestamp_logs(start_block, end_block);
 
         let (
             register_logs,
@@ -143,9 +129,9 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             remove_logs,
             admin_reset_logs,
             migrated_logs,
-            // rent_logs,
-            // set_max_units_logs,
-            // deprecation_timestamp_logs,
+            rent_logs,
+            set_max_units_logs,
+            deprecation_timestamp_logs,
         ) = tokio::try_join!(
             register_future,
             transfer_future,
@@ -155,9 +141,9 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             remove_future,
             admin_reset_future,
             migrated_future,
-            // rent_future,
-            // set_max_units_future,
-            // deprecation_timestamp_future
+            rent_future,
+            set_max_units_future,
+            deprecation_timestamp_future
         )?;
 
         Ok(CollectedLogs {
@@ -169,35 +155,27 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             remove: remove_logs,
             admin_reset: admin_reset_logs,
             migrated: migrated_logs,
+            rent: rent_logs,
+            set_max_units: set_max_units_logs,
+            deprecation_timestamp: deprecation_timestamp_logs,
         })
     }
 
     async fn fetch_event_timestamps(&mut self, events: Vec<Log>) -> (Vec<Log>, Vec<u32>) {
-        let futures: Vec<_> = events
-            .iter()
-            .filter_map(|log| log.block_hash)
-            .map(|block_hash| {
-                let provider = self.provider.clone(); // Clone provider to move into the async block
-                let block_timestamp_cache = &self.block_timestamp_cache; // Borrow block_timestamp_cache mutably
-                async move {
-                    if let Some(timestamp) = block_timestamp_cache.get(&block_hash) {
-                        return Ok::<u32, Box<dyn Error>>(*timestamp);
-                    }
-                    let timestamp = get_block_timestamp(provider, block_hash).await;
-                    timestamp
+        let mut timestamps = Vec::new();
+
+        for event in events.iter() {
+            if let Some(block_hash) = event.block_hash {
+                if let Some(timestamp) = self.block_timestamp_cache.get(&block_hash) {
+                    timestamps.push(*timestamp);
+                } else {
+                    // Fetch timestamp from provider if not in cache
+                    let timestamp = get_block_timestamp(self.provider.clone(), block_hash)
+                        .await
+                        .unwrap();
+                    self.block_timestamp_cache.insert(block_hash, timestamp);
+                    timestamps.push(timestamp);
                 }
-            })
-            .collect();
-
-        let timestamps: Vec<u32> = futures::future::join_all(futures)
-            .await
-            .into_iter()
-            .filter_map(Result::ok)
-            .collect();
-
-        for (log, timestamp) in events.iter().zip(timestamps.iter()) {
-            if let Some(block_hash) = log.block_hash {
-                self.block_timestamp_cache.insert(block_hash, *timestamp);
             }
         }
 
@@ -205,18 +183,12 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
     }
 
     async fn sync_register_logs(&mut self, register_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
-        let fetch_start = std::time::Instant::now();
         let (register_logs, timestamps) = self.fetch_event_timestamps(register_logs).await;
-        let fetch_duration = fetch_start.elapsed();
-        println!("Fetching event timestamps took {:?}", fetch_duration);
 
-        let persist_start = std::time::Instant::now();
         self.id_registry
             .persist_many_register_logs(&self.store, register_logs, self.chain_id, &timestamps)
             .await
             .unwrap();
-        let persist_duration = persist_start.elapsed();
-        println!("Persisting register logs took {:?}", persist_duration);
 
         Ok(())
     }
@@ -316,63 +288,52 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         Ok(())
     }
 
-    async fn sync_rent_logs(&mut self, start: u64, end: u64) -> Result<(), Box<dyn Error>> {
-        let rent_logs = self.storage_registry.get_rent_logs(start, end).await?;
-        for log in rent_logs {
-            let block_hash = log.block_hash.unwrap();
-            let timestamp = self.get_block_timestamp(block_hash).await?;
+    async fn sync_rent_logs(&mut self, rent_logs: Vec<Log>) -> Result<(), Box<dyn Error>> {
+        let (rent_logs, timestamps) = self.fetch_event_timestamps(rent_logs).await;
 
-            self.storage_registry
-                .persist_rent_log(&self.store, &log, self.chain_id, timestamp as i64)
-                .await?
-        }
+        self.storage_registry
+            .persist_many_rent_logs(&self.store, rent_logs, self.chain_id, &timestamps)
+            .await
+            .unwrap();
 
         Ok(())
     }
 
     async fn sync_set_max_units_logs(
         &mut self,
-        start: u64,
-        end: u64,
+        set_max_units_logs: Vec<Log>,
     ) -> Result<(), Box<dyn Error>> {
-        let set_max_units_logs = self
-            .storage_registry
-            .get_set_max_units_logs(start, end)
-            .await?;
-        for log in set_max_units_logs {
-            let block_hash = log.block_hash.unwrap();
-            let timestamp = self.get_block_timestamp(block_hash).await?;
+        let (set_max_units_logs, timestamps) =
+            self.fetch_event_timestamps(set_max_units_logs).await;
 
-            self.storage_registry
-                .persist_set_max_units_log(&self.store, &log, self.chain_id, timestamp as i64)
-                .await?
-        }
+        self.storage_registry
+            .persist_many_set_max_units_logs(
+                &self.store,
+                set_max_units_logs,
+                self.chain_id,
+                &timestamps,
+            )
+            .await
+            .unwrap();
 
         Ok(())
     }
 
     async fn sync_deprecation_timestamp_logs(
         &mut self,
-        start: u64,
-        end: u64,
+        deprecation_logs: Vec<Log>,
     ) -> Result<(), Box<dyn Error>> {
-        let deprecation_timestamp_logs = self
-            .storage_registry
-            .get_deprecation_timestamp_logs(start, end)
-            .await?;
-        for log in deprecation_timestamp_logs {
-            let block_hash = log.block_hash.unwrap();
-            let timestamp = self.get_block_timestamp(block_hash).await?;
+        let (deprecation_logs, timestamps) = self.fetch_event_timestamps(deprecation_logs).await;
 
-            self.storage_registry
-                .persist_deprecation_timestamp_log(
-                    &self.store,
-                    &log,
-                    self.chain_id,
-                    timestamp as i64,
-                )
-                .await?
-        }
+        self.storage_registry
+            .persist_many_deprecation_timestamp_logs(
+                &self.store,
+                deprecation_logs,
+                self.chain_id,
+                &timestamps,
+            )
+            .await
+            .unwrap();
 
         Ok(())
     }
@@ -393,24 +354,20 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         }
     }
 
-    pub async fn sync(&mut self, start_block: u64, end_block: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn sync(&mut self, start_block: u64, _end_block: u64) -> Result<(), Box<dyn Error>> {
         let mut current_block = start_block;
         let start_time = std::time::Instant::now();
-
-        log::debug!(
-            "syncing events from block {} to {}",
-            current_block,
-            end_block
-        );
 
         // fetch logs in range [current_block_num, current_block_num + 2000]
         while current_block <= end_block {
             let percent_complete = (current_block - FARCASTER_START_BLOCK) as f64
                 / (end_block - FARCASTER_START_BLOCK) as f64;
 
-            let bar_width = 20;
-            let progress = (percent_complete * bar_width as f64).round() as usize;
-            let bar: String = "=".repeat(progress) + ">" + &" ".repeat(bar_width - progress - 1);
+            let bar_width = 20i32;
+            let progress = (percent_complete * bar_width as f64).round() as i32;
+            let bar: String = "=".repeat(progress.min(bar_width - 1) as usize)
+                + ">"
+                + &" ".repeat((bar_width - progress - 1).max(0) as usize);
 
             let elapsed_time = start_time.elapsed().as_secs();
             let rate_of_progress = (current_block - start_block) as f64 / elapsed_time as f64; // blocks per second
@@ -428,42 +385,54 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             let start = current_block;
             let end = current_block + BLOCK_INTERVAL;
 
-            let collect_logs_start = std::time::Instant::now();
             let collected_logs = self.collect_logs(start, end).await?;
-            log::info!(
-                "collect_logs took {} seconds",
-                collect_logs_start.elapsed().as_secs()
-            );
 
             // id registry logs
-            let sync_start = std::time::Instant::now();
-            self.sync_register_logs(collected_logs.register).await?;
-            log::info!(
-                "sync_register_logs took {} seconds",
-                sync_start.elapsed().as_secs()
-            );
-            self.sync_transfer_logs(collected_logs.transfer).await?;
-            self.sync_recovery_logs(collected_logs.recovery).await?;
-            self.sync_change_recovery_address_logs(collected_logs.change_recovery_address)
-                .await?;
+            if collected_logs.register.len() > 0 {
+                self.sync_register_logs(collected_logs.register).await?;
+            }
+            if collected_logs.transfer.len() > 0 {
+                self.sync_transfer_logs(collected_logs.transfer).await?;
+            }
+            if collected_logs.recovery.len() > 0 {
+                self.sync_recovery_logs(collected_logs.recovery).await?;
+            }
+            if collected_logs.change_recovery_address.len() > 0 {
+                self.sync_change_recovery_address_logs(collected_logs.change_recovery_address)
+                    .await?;
+            }
 
             // key registry logs
-            self.sync_add_logs(collected_logs.add).await?;
-            self.sync_remove_logs(collected_logs.remove).await?;
-            self.sync_admin_reset_logs(collected_logs.admin_reset)
-                .await?;
-            self.sync_migrated_logs(collected_logs.migrated).await?;
+            if collected_logs.add.len() > 0 {
+                self.sync_add_logs(collected_logs.add).await?;
+            }
+            if collected_logs.remove.len() > 0 {
+                self.sync_remove_logs(collected_logs.remove).await?;
+            }
+            if collected_logs.admin_reset.len() > 0 {
+                self.sync_admin_reset_logs(collected_logs.admin_reset)
+                    .await?;
+            }
+            if collected_logs.migrated.len() > 0 {
+                self.sync_migrated_logs(collected_logs.migrated).await?;
+            }
 
-            // // storage registry logs
-            // self.sync_rent_logs(start, end).await?;
-            // log::info!("synced rent logs");
-            // self.sync_set_max_units_logs(start, end).await?;
-            // log::info!("synced set max units logs");
-            // self.sync_deprecation_timestamp_logs(start, end).await?;
-            // log::info!("synced deprecation timestamp logs");
+            // storage registry logs
+            if collected_logs.rent.len() > 0 {
+                self.sync_rent_logs(collected_logs.rent).await?;
+            }
+            if collected_logs.set_max_units.len() > 0 {
+                self.sync_set_max_units_logs(collected_logs.set_max_units)
+                    .await?;
+            }
+            if collected_logs.deprecation_timestamp.len() > 0 {
+                self.sync_deprecation_timestamp_logs(collected_logs.deprecation_timestamp)
+                    .await?;
+            }
 
             current_block = end + 1;
         }
+
         Ok(())
     }
 }

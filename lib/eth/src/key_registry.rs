@@ -467,7 +467,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
 
     pub async fn process_migrated_log(
         &self,
-        store: &Store,
+        _store: &Store,
         log: &Log,
         chain_id: u32,
         timestamp: u32,
