@@ -4,6 +4,7 @@ use ethers::{
     providers::{JsonRpcClient, Provider},
     types::{Address, Filter, Log, U256},
 };
+use sqlx::Acquire;
 use std::error::Error;
 use std::sync::Arc;
 use teleport_common::protobufs::generated::{
@@ -166,8 +167,21 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
-        db::FidRow::bulk_insert(store, &fid_rows).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        let queries = db::FidRow::generate_bulk_insert_queries(&fid_rows)?;
+        for query in queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -257,8 +271,20 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
-        db::FidRow::bulk_transfer(store, &fid_transfers).await?;
+        let mut conn = store.conn.acquire().await?;
+        let mut transaction = conn.begin().await?;
+
+        let insert_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in insert_queries {
+            sqlx::query(&query).execute(&mut *transaction).await?;
+        }
+
+        let transfer_queries = db::FidRow::generate_bulk_transfer_queries(&fid_transfers)?;
+        for query in transfer_queries {
+            sqlx::query(&query).execute(&mut *transaction).await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -351,8 +377,22 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(&store, &event_rows).await?;
-        db::FidRow::bulk_transfer(&store, &recoveries).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let insert_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in insert_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        let transfer_queries = db::FidRow::generate_bulk_transfer_queries(&recoveries)?;
+        for query in transfer_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -447,8 +487,21 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::FidRow::bulk_update_recovery_address(&store, &recovery_address_updates).await?;
-        db::ChainEventRow::bulk_insert(&store, &event_rows).await?;
+        let mut conn = store.conn.acquire().await?;
+        let mut transaction = conn.begin().await?;
+
+        let insert_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in insert_queries {
+            sqlx::query(&query).execute(&mut *transaction).await?;
+        }
+
+        let update_queries =
+            db::FidRow::generate_bulk_update_recovery_address_queries(&recovery_address_updates)?;
+        for query in update_queries {
+            sqlx::query(&query).execute(&mut *transaction).await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }

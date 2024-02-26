@@ -2,13 +2,13 @@ use crate::utils::{get_logs, get_signature_topic, read_abi};
 use alloy_dyn_abi::DynSolType;
 use ethers::{
     contract::{parse_log, Contract as EthContract, ContractInstance, EthEvent},
-    core::utils::keccak256,
-    providers::{JsonRpcClient, Middleware, Provider},
+    providers::{JsonRpcClient, Provider},
     types::{Address, Bytes, Filter, Log, H256, U256},
 };
 use log;
 use serde::{Deserialize, Serialize};
 use serde_json::{self};
+use sqlx::Acquire;
 use std::error::Error;
 use std::sync::Arc;
 use teleport_common::protobufs::generated::{
@@ -224,8 +224,22 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
-        db::SignerRow::bulk_insert(store, &signer_rows).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let event_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in event_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        let signer_queries = db::SignerRow::generate_bulk_insert_queries(&signer_rows)?;
+        for query in signer_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -309,7 +323,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             .await?;
 
         event_row.insert(store).await?;
-        db::SignerRow::update_remove_chain_event(&store, key_bytes.to_vec(), event_row.id).await?;
+        db::SignerRow::update_remove_event(&store, key_bytes.to_vec(), event_row.id).await?;
 
         Ok(())
     }
@@ -332,8 +346,22 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
-        db::SignerRow::bulk_update_remove_chain_event(store, &updates).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let insert_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in insert_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        let update_queries = db::SignerRow::generate_bulk_remove_update_queries(&updates)?;
+        for query in update_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -443,9 +471,18 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let event_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in event_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
 
         // TODO: invalidate keyBytes and messages signed by these keyBytes
+
+        transaction.commit().await?;
 
         Ok(())
     }
@@ -537,7 +574,14 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let event_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in event_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
 
         /*
         TODO
@@ -545,6 +589,8 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         2. After the grace period (24 hours), stop accepting all Farcaster Signer messages.
         3. Drop any messages created by off-chain Farcaster Signers whose pub key was not emitted as an Add event.
         */
+
+        transaction.commit().await?;
 
         Ok(())
     }

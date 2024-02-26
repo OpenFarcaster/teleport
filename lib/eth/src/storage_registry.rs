@@ -4,6 +4,7 @@ use ethers::{
     providers::{JsonRpcClient, Provider},
     types::{Address, Filter, Log, U256},
 };
+use sqlx::Acquire;
 use std::error::Error;
 use std::sync::Arc;
 use teleport_common::protobufs::generated::{
@@ -148,8 +149,23 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             event_rows.push(event_row);
         }
 
-        db::ChainEventRow::bulk_insert(store, &event_rows).await?;
-        db::StorageAllocationRow::bulk_insert(store, &storage_allocations).await?;
+        let mut connection = store.conn.acquire().await?;
+        let mut transaction = connection.begin().await?;
+
+        let event_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
+        for query in event_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        let allocation_queries =
+            db::StorageAllocationRow::generate_bulk_insert_queries(&storage_allocations)?;
+        for query in allocation_queries {
+            let query = sqlx::query(&query);
+            query.execute(&mut *transaction).await?;
+        }
+
+        transaction.commit().await?;
 
         Ok(())
     }
