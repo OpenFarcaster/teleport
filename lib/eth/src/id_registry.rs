@@ -122,17 +122,15 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         };
 
         let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
+        let fid_row = db::FidRow {
+            fid: parsed_log.id.as_u64() as i64,
+            registered_at: timestamp.into(),
+            chain_event_id: event_row.id.clone(),
+            custody_address: parsed_log.to.to_fixed_bytes(),
+            recovery_address: parsed_log.recovery.to_fixed_bytes(),
+        };
 
-        Ok((
-            db::FidRow {
-                fid: parsed_log.id.as_u64() as i64,
-                registered_at: timestamp.into(),
-                chain_event_id: event_row.id.clone(),
-                custody_address: parsed_log.to.to_fixed_bytes(),
-                recovery_address: parsed_log.recovery.to_fixed_bytes(),
-            },
-            event_row,
-        ))
+        Ok((fid_row, event_row))
     }
 
     pub async fn persist_register_log(

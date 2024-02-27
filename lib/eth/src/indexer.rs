@@ -430,6 +430,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
                     .await?;
             }
 
+            self.block_timestamp_cache.clear();
             current_block = end + 1;
         }
 
