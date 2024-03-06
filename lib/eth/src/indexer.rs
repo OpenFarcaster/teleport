@@ -14,8 +14,6 @@ use std::u64::MIN;
 use teleport_storage::{db, Store};
 use tokio;
 
-// todo: Is this right? IdRegistry seems to be deployed at 108869029u64
-// const FARCASTER_START_BLOCK: u64 = 108864739u64;
 const FARCASTER_START_BLOCK: u64 = 111816370u64;
 
 struct CollectedLogs {
