@@ -12,7 +12,7 @@ use figment::{
 };
 use libp2p::PeerId;
 use libp2p::{identity::ed25519, Multiaddr};
-use log;
+use log::{self, debug};
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
 use serde::Deserialize;
@@ -45,6 +45,7 @@ struct Config {
     abi_dir: String,
     indexer_interval: u64,
     bootstrap_addrs: Vec<String>,
+    sync_block_range_size: u64,
 }
 
 #[tokio::main]
@@ -60,6 +61,8 @@ async fn main() {
         .merge(Env::raw())
         .extract()
         .expect("configuration error");
+
+    debug!("Config: {:#?}", config);
 
     // run database migrations
     let store = teleport_storage::Store::new(config.db_path).await;
@@ -89,12 +92,20 @@ async fn main() {
     let latest_block_num = indexer.get_latest_block().await.unwrap();
     let start_block_num = indexer.get_start_block().await;
     indexer
-        .sync(start_block_num, latest_block_num)
+        .sync(
+            start_block_num,
+            latest_block_num,
+            config.sync_block_range_size,
+        )
         .await
         .unwrap();
 
     // Subscribe to new events asynchronously
-    let subscribe_task = indexer.subscribe(latest_block_num + 1, config.indexer_interval);
+    let subscribe_task = indexer.subscribe(
+        latest_block_num + 1,
+        config.indexer_interval,
+        config.sync_block_range_size,
+    );
 
     let secret_key_hex = config.farcaster_priv_key;
     let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");

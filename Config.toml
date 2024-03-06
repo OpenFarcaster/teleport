@@ -9,3 +9,4 @@ storage_registry_address = "0x00000000fcce7f938e7ae6d3c335bd6a1a7c593d"
 abi_dir = "./lib/eth/abis"
 indexer_interval = 60                                                   # This value is in seconds
 bootstrap_addrs = ["/ip4/107.21.22.118/tcp/2282"]
+sync_block_range_size = 2000

@@ -1,7 +1,7 @@
 -- Add migration script here
 
 --- chain events
-CREATE TABLE chain_events (
+CREATE TABLE IF NOT EXISTS chain_events (
     id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     block_timestamp DATETIME NOT NULL,
@@ -17,13 +17,13 @@ CREATE TABLE chain_events (
     raw BLOB NOT NULL
 );
 
-CREATE INDEX chain_events_fid_index ON chain_events(fid);
-CREATE INDEX chain_events_block_hash_index ON chain_events(block_hash);
-CREATE INDEX chain_events_block_timestamp_index ON chain_events(block_timestamp);
-CREATE INDEX chain_events_transaction_hash_index ON chain_events(transaction_hash);
+CREATE INDEX IF NOT EXISTS chain_events_fid_index ON chain_events(fid);
+CREATE INDEX IF NOT EXISTS chain_events_block_hash_index ON chain_events(block_hash);
+CREATE INDEX IF NOT EXISTS chain_events_block_timestamp_index ON chain_events(block_timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS chain_events_transaction_hash_index ON chain_events(transaction_hash);
 
 ---- FID
-CREATE TABLE fids (
+CREATE TABLE IF NOT EXISTS fids (
     fid INTEGER NOT NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -36,7 +36,7 @@ CREATE TABLE fids (
 );
 
 --- Signers
-CREATE TABLE signers (
+CREATE TABLE IF NOT EXISTS signers (
     id TEXT PRIMARY KEY,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -57,11 +57,11 @@ CREATE TABLE signers (
     FOREIGN KEY (remove_chain_event_id) REFERENCES chain_events(id) ON DELETE CASCADE
 );
 
-CREATE INDEX signers_fid_index ON signers(fid);
-CREATE INDEX signers_requester_fid_index ON signers(requester_fid);
+CREATE INDEX IF NOT EXISTS signers_fid_index ON signers(fid);
+CREATE INDEX IF NOT EXISTS signers_requester_fid_index ON signers(requester_fid);
 
 --- username proofs
-CREATE TABLE username_proofs (
+CREATE TABLE IF NOT EXISTS username_proofs (
     id TEXT PRIMARY KEY,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -75,10 +75,10 @@ CREATE TABLE username_proofs (
     FOREIGN KEY (fid) REFERENCES fids(fid) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX username_proofs_username_timestamp_unique ON username_proofs (username, timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS username_proofs_username_timestamp_unique ON username_proofs (username, timestamp);
 
 --- fnames
-CREATE TABLE fnames (
+CREATE TABLE IF NOT EXISTS fnames (
     id TEXT PRIMARY KEY,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -90,11 +90,11 @@ CREATE TABLE fnames (
     FOREIGN KEY (fid) REFERENCES fids(fid) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX fnames_fid_unique ON fnames (fid);
-CREATE UNIQUE INDEX fnames_username_unique ON fnames (username);
+CREATE UNIQUE INDEX IF NOT EXISTS fnames_fid_unique ON fnames (fid);
+CREATE UNIQUE INDEX IF NOT EXISTS fnames_username_unique ON fnames (username);
 
 --- messages
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -116,12 +116,13 @@ CREATE TABLE messages (
     FOREIGN KEY (fid, signer) REFERENCES signers(fid, key) ON DELETE CASCADE
 );
 
-CREATE INDEX messages_timestamp_index ON messages(timestamp);
-CREATE INDEX messages_fid_index ON messages(fid);
-CREATE INDEX messages_signer_index ON messages(signer);
+CREATE INDEX IF NOT EXISTS messages_timestamp_index ON messages(timestamp);
+CREATE INDEX IF NOT EXISTS messages_fid_index ON messages(fid);
+CREATE INDEX IF NOT EXISTS messages_signer_index ON messages(signer);
+CREATE UNIQUE INDEX IF NOT EXISTS messages_hash_unique ON messages(hash);
 
 --- casts
-CREATE TABLE casts (
+CREATE TABLE IF NOT EXISTS casts (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -143,16 +144,16 @@ CREATE TABLE casts (
     FOREIGN KEY (hash) REFERENCES messages(hash) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX casts_hash_unique ON casts (hash);
+CREATE UNIQUE INDEX IF NOT EXISTS casts_hash_unique ON casts (hash);
 
-CREATE INDEX casts_timestamp_index ON casts(timestamp);
-CREATE INDEX casts_parent_hash_index ON casts(parent_hash);
-CREATE INDEX casts_root_parent_hash_index ON casts(root_parent_hash);
-CREATE INDEX casts_parent_url_index ON casts(parent_url);
-CREATE INDEX casts_root_parent_url_index ON casts(root_parent_url);
+CREATE INDEX IF NOT EXISTS casts_timestamp_index ON casts(timestamp);
+CREATE INDEX IF NOT EXISTS casts_parent_hash_index ON casts(parent_hash);
+CREATE INDEX IF NOT EXISTS casts_root_parent_hash_index ON casts(root_parent_hash);
+CREATE INDEX IF NOT EXISTS casts_parent_url_index ON casts(parent_url);
+CREATE INDEX IF NOT EXISTS casts_root_parent_url_index ON casts(root_parent_url);
 
 --- reactions
-CREATE TABLE reactions (
+CREATE TABLE IF NOT EXISTS reactions (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -170,14 +171,14 @@ CREATE TABLE reactions (
     FOREIGN KEY (target_cast_hash) REFERENCES casts(hash) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX reactions_hash_unique ON reactions (hash);
+CREATE UNIQUE INDEX IF NOT EXISTS reactions_hash_unique ON reactions (hash);
 
-CREATE INDEX reactions_fid_timestamp_index ON reactions(fid, timestamp);
-CREATE INDEX reactions_target_cast_hash_index ON reactions(target_cast_hash);
-CREATE INDEX reactions_target_url_index ON reactions(target_url);
+CREATE INDEX IF NOT EXISTS reactions_fid_timestamp_index ON reactions(fid, timestamp);
+CREATE INDEX IF NOT EXISTS reactions_target_cast_hash_index ON reactions(target_cast_hash);
+CREATE INDEX IF NOT EXISTS reactions_target_url_index ON reactions(target_url);
 
 --- links
-CREATE TABLE links (
+CREATE TABLE IF NOT EXISTS links (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -193,11 +194,11 @@ CREATE TABLE links (
     FOREIGN KEY (target_fid) REFERENCES fids(fid) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX links_hash_unique ON links (hash);
-CREATE UNIQUE INDEX links_fid_target_fid_type_unique ON links (fid, target_fid, type);
+CREATE UNIQUE INDEX IF NOT EXISTS links_hash_unique ON links (hash);
+CREATE UNIQUE INDEX IF NOT EXISTS links_fid_target_fid_type_unique ON links (fid, target_fid, type);
 
 --- verifications
-CREATE TABLE verifications (
+CREATE TABLE IF NOT EXISTS verifications (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -213,11 +214,11 @@ CREATE TABLE verifications (
     FOREIGN KEY (hash) REFERENCES messages(hash) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX verifications_signer_address_fid_unique ON verifications (signer_address, fid);
-CREATE INDEX verifications_fid_timestamp_index ON verifications (fid, timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS verifications_signer_address_fid_unique ON verifications (signer_address, fid);
+CREATE INDEX IF NOT EXISTS verifications_fid_timestamp_index ON verifications (fid, timestamp);
 
 --- user data
-CREATE TABLE user_data (
+CREATE TABLE IF NOT EXISTS user_data (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -232,10 +233,10 @@ CREATE TABLE user_data (
     FOREIGN KEY (hash) REFERENCES messages(hash) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX user_data_fid_type_unique ON user_data (fid, type);
+CREATE UNIQUE INDEX IF NOT EXISTS user_data_fid_type_unique ON user_data (fid, type);
 
 ---- storage allocations
-CREATE TABLE storage_allocations (
+CREATE TABLE IF NOT EXISTS storage_allocations (
     id TEXT,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -249,4 +250,4 @@ CREATE TABLE storage_allocations (
     FOREIGN KEY (chain_event_id) REFERENCES chain_events(id) ON DELETE CASCADE
 );
 
-CREATE INDEX storage_allocations_fid_expires_at_index ON storage_allocations(fid, expires_at);
+CREATE INDEX IF NOT EXISTS storage_allocations_fid_expires_at_index ON storage_allocations(fid, expires_at);

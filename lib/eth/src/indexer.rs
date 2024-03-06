@@ -6,8 +6,10 @@ use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::BlockNumber,
 };
+use std::cmp;
 use std::collections::HashMap;
 use std::error::Error;
+use std::u64::MIN;
 use teleport_storage::{db, Store};
 use tokio;
 
@@ -270,6 +272,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         &mut self,
         start_block: u64,
         interval_in_secs: u64,
+        sync_block_range_size: u64,
     ) -> Result<(), Box<dyn Error>> {
         let mut interval =
             tokio::time::interval(tokio::time::Duration::from_secs(interval_in_secs));
@@ -277,12 +280,19 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         loop {
             interval.tick().await;
             let latest_block = self.get_latest_block().await?;
-            self.sync(current_block, latest_block).await.unwrap();
+            self.sync(current_block, latest_block, sync_block_range_size)
+                .await
+                .unwrap();
             current_block = latest_block + 1;
         }
     }
 
-    pub async fn sync(&mut self, start_block: u64, end_block: u64) -> Result<(), Box<dyn Error>> {
+    pub async fn sync(
+        &mut self,
+        start_block: u64,
+        end_block: u64,
+        sync_block_range_size: u64,
+    ) -> Result<(), Box<dyn Error>> {
         let mut current_block = start_block;
 
         log::info!(
@@ -295,13 +305,15 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         while current_block <= end_block {
             let percent_complete =
                 (current_block - start_block) as f64 / (end_block - start_block) as f64;
+
+            let start = current_block;
+            let end = current_block + cmp::min(sync_block_range_size, end_block - current_block);
+
+            log::info!("syncing events batch from block {} to {}", start, end);
             log::info!("events sync progress = {:.2}%", percent_complete * 100.0);
 
             // Clear block timestamp cache to avoid overloading it with useless data
             self.block_timestamp_cache.clear();
-
-            let start = current_block;
-            let end = current_block + 2000;
 
             // id registry logs
             self.sync_register_logs(start, end).await?;
