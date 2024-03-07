@@ -4,18 +4,19 @@ use ethers::{
     providers::{JsonRpcClient, Provider},
     types::{Address, Filter, Log, U256},
 };
+use log::{error, warn};
 use sqlx::Acquire;
-use std::error::Error;
 use std::sync::Arc;
-use teleport_common::protobufs::generated::{
-    on_chain_event, OnChainEvent, OnChainEventType, StorageRentEventBody,
+use std::{error::Error, iter::zip};
+use teleport_common::{
+    protobufs::generated::{on_chain_event, OnChainEvent, OnChainEventType, StorageRentEventBody},
+    time::block_timestamp_to_farcaster_time,
 };
 use teleport_storage::db::{self};
 use teleport_storage::Store;
 
 pub const RENT_SIGNATURE: &str = "Rent(address,uint256,uint256)";
-pub const SET_MAX_UNITS_SIGNATURE: &str = "SetMaxUnits(uint256,uint256)";
-pub const SET_DEPRECATION_TIMESTAMP_SIGNATURE: &str = "SetDeprecationTimestamp(uint256,uint256)";
+const RENT_EXPIRY_IN_SECONDS: u32 = 365 * 24 * 60 * 60; // One year
 
 #[derive(Debug, Clone, EthEvent)]
 struct Rent {
@@ -24,20 +25,6 @@ struct Rent {
     #[ethevent(indexed)]
     pub fid: U256,
     pub units: U256,
-}
-
-#[derive(Debug, Clone, EthEvent)]
-#[allow(non_snake_case)]
-struct SetMaxUnits {
-    pub oldMax: U256,
-    pub newMax: U256,
-}
-
-#[derive(Debug, Clone, EthEvent)]
-#[allow(non_snake_case)]
-struct SetDeprecationTimestamp {
-    pub oldTimestamp: U256,
-    pub newTimestamp: U256,
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +49,7 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         })
     }
 
-    pub async fn get_rent_logs(
+    pub async fn get_storage_registry_logs(
         &self,
         start_block: u64,
         end_block: u64,
@@ -72,214 +59,122 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             .from_block(start_block)
             .to_block(end_block)
             .topic0(get_signature_topic(RENT_SIGNATURE));
-        let logs = get_logs(self.provider.clone(), &filter).await?;
 
-        Ok(logs)
+        let all_logs = get_logs(self.provider.clone(), &filter).await?;
+
+        Ok(all_logs)
     }
 
-    pub async fn process_rent_log(
-        &self,
-        log: &Log,
-        chain_id: u32,
-        timestamp: u32,
-    ) -> Result<(db::StorageAllocationRow, db::ChainEventRow), Box<dyn Error>> {
-        let parsed_log: Rent = parse_log(log.clone()).unwrap();
-        let units = parsed_log.units.as_u32();
-        let expiry = parsed_log.units.as_u32() + 395 * 24 * 60 * 60;
-        let fid = parsed_log.fid.as_u64();
-        let payer = parsed_log.payer.as_bytes().to_vec();
-
-        let body = StorageRentEventBody {
-            payer: parsed_log.payer.as_bytes().to_vec(),
-            units,
-            expiry,
-        };
-
-        let onchain_event = OnChainEvent {
-            r#type: OnChainEventType::EventTypeStorageRent as i32,
-            chain_id,
-            block_number: log.block_number.unwrap().as_u32(),
-            block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-            block_timestamp: timestamp as u64,
-            transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-            log_index: log.log_index.unwrap().as_u32(),
-            fid,
-            body: Some(on_chain_event::Body::StorageRentEventBody(body)),
-            tx_index: log.transaction_index.unwrap().as_u32(),
-            version: 2,
-        };
-
-        let event_row = db::ChainEventRow::new(onchain_event, log.data.to_vec());
-        let storage_allocation =
-            db::StorageAllocationRow::new(0, expiry, event_row.id.clone(), fid, units, payer);
-
-        Ok((storage_allocation, event_row))
-    }
-
-    pub async fn persist_rent_log(
-        &self,
-        store: &Store,
-        log: &Log,
-        chain_id: u32,
-        timestamp: u32,
-    ) -> Result<(), Box<dyn Error>> {
-        let (storage_allocation, event_row) =
-            self.process_rent_log(log, chain_id, timestamp).await?;
-
-        event_row.insert(&store).await?;
-        storage_allocation.insert(&store).await?;
-
-        Ok(())
-    }
-
-    pub async fn persist_many_rent_logs(
+    pub async fn process_storage_registry_logs(
         &self,
         store: &Store,
         logs: Vec<Log>,
+        timestamps: Vec<u32>,
         chain_id: u32,
-        timestamps: &[u32],
     ) -> Result<(), Box<dyn Error>> {
-        let mut storage_allocations = Vec::new();
-        let mut event_rows = Vec::new();
+        let mut chain_events: Vec<db::ChainEventRow> = vec![];
+        let mut storage_allocations: Vec<db::StorageAllocationRow> = vec![];
 
-        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
-            let (storage_allocation, event_row) =
-                self.process_rent_log(log, chain_id, *timestamp).await?;
-            storage_allocations.push(storage_allocation);
-            event_rows.push(event_row);
+        for (i, log) in logs.iter().enumerate() {
+            if log.block_hash.is_none()
+                || log.block_number.is_none()
+                || log.transaction_hash.is_none()
+                || log.transaction_index.is_none()
+                || log.log_index.is_none()
+                || log.removed.is_some_and(|removed| removed)
+            {
+                continue;
+            }
+
+            if log.topics[0] == get_signature_topic(RENT_SIGNATURE) {
+                let Ok(parsed_log) = parse_log::<Rent>(log.clone()) else {
+                    warn!("Failed to parse Rent event args {:?}", log);
+                    continue;
+                };
+
+                let timestamp = timestamps[i];
+                let Ok(timestamp_as_fc_time) = block_timestamp_to_farcaster_time(timestamp) else {
+                    error!("Failed to parse block timestamp {:?}", timestamp);
+                    continue;
+                };
+
+                let expiry = timestamp_as_fc_time + RENT_EXPIRY_IN_SECONDS;
+                let storage_rent_event_body = StorageRentEventBody {
+                    payer: parsed_log.payer.as_bytes().to_vec(),
+                    units: parsed_log.units.as_u32(),
+                    expiry,
+                };
+
+                let onchain_event = OnChainEvent {
+                    r#type: OnChainEventType::EventTypeStorageRent as i32,
+                    chain_id,
+                    block_number: log.block_number.unwrap().as_u32(),
+                    block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
+                    block_timestamp: timestamp as u64,
+                    transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+                    log_index: log.log_index.unwrap().as_u32(),
+                    fid: parsed_log.fid.as_u64(),
+                    tx_index: log.transaction_index.unwrap().as_u32(),
+                    version: 2,
+                    body: Some(on_chain_event::Body::StorageRentEventBody(
+                        storage_rent_event_body,
+                    )),
+                };
+
+                let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
+                let storage_allocations_row = db::StorageAllocationRow::new(
+                    timestamp_as_fc_time.into(),
+                    expiry,
+                    log.transaction_hash.unwrap().as_bytes().to_vec(),
+                    log.log_index.unwrap().as_u32(),
+                    parsed_log.fid.as_u64(),
+                    parsed_log.units.as_u32(),
+                    parsed_log.payer.as_bytes().to_vec(),
+                );
+
+                chain_events.push(chain_events_row);
+                storage_allocations.push(storage_allocations_row);
+            }
         }
 
         let mut connection = store.conn.acquire().await?;
         let mut transaction = connection.begin().await?;
 
-        let event_queries = db::ChainEventRow::generate_bulk_insert_queries(&event_rows)?;
-        for query in event_queries {
-            let query = sqlx::query(&query);
-            query.execute(&mut *transaction).await?;
-        }
-
+        let event_queries = db::ChainEventRow::generate_bulk_insert_queries(&chain_events)?;
         let allocation_queries =
             db::StorageAllocationRow::generate_bulk_insert_queries(&storage_allocations)?;
-        for query in allocation_queries {
-            let query = sqlx::query(&query);
-            query.execute(&mut *transaction).await?;
+
+        for (event_query_str, allocation_query_str) in zip(event_queries, allocation_queries) {
+            let event_query = sqlx::query(&event_query_str);
+            let event_query_result = event_query.execute(&mut *transaction).await;
+            match event_query_result {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(
+                        "Failed to insert chain event row: {} {}",
+                        e, &event_query_str
+                    );
+                    transaction.rollback().await?;
+                    return Err(Box::new(e));
+                }
+            }
+
+            let allocation_query = sqlx::query(&allocation_query_str);
+            let allocation_query_result = allocation_query.execute(&mut *transaction).await;
+            match allocation_query_result {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(
+                        "Failed to insert storage allocation row: {}\n {}\n {}",
+                        e, &event_query_str, &allocation_query_str
+                    );
+                    transaction.rollback().await?;
+                    return Err(Box::new(e));
+                }
+            }
         }
 
         transaction.commit().await?;
-
-        Ok(())
-    }
-
-    pub async fn get_set_max_units_logs(
-        &self,
-        start_block: u64,
-        end_block: u64,
-    ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let filter = Filter::new()
-            .address(self.inner.address())
-            .from_block(start_block)
-            .to_block(end_block)
-            .topic0(get_signature_topic(SET_MAX_UNITS_SIGNATURE));
-        let logs = get_logs(self.provider.clone(), &filter).await?;
-
-        Ok(logs)
-    }
-
-    pub async fn process_set_max_units_log(
-        &self,
-        log: &Log,
-        _chain_id: u32,
-        _timestamp: u32,
-    ) -> Result<(), Box<dyn Error>> {
-        let parsed_log: SetMaxUnits = parse_log(log.clone()).unwrap();
-        let _old_max = parsed_log.oldMax.as_u32();
-        let _new_max = parsed_log.newMax.as_u32();
-
-        // TODO: Return proper rows to be stored
-
-        Ok(())
-    }
-
-    pub async fn persist_set_max_units_log(
-        &self,
-        _store: &Store,
-        log: &Log,
-        chain_id: u32,
-        timestamp: u32,
-    ) -> Result<(), Box<dyn Error>> {
-        self.process_set_max_units_log(log, chain_id, timestamp);
-
-        Ok(())
-    }
-
-    pub async fn persist_many_set_max_units_logs(
-        &self,
-        _store: &Store,
-        logs: Vec<Log>,
-        chain_id: u32,
-        timestamps: &[u32],
-    ) -> Result<(), Box<dyn Error>> {
-        for (log, timestamp) in logs.iter().zip(timestamps.iter()) {
-            self.process_set_max_units_log(log, chain_id, *timestamp)
-                .await?;
-        }
-
-        // TODO: Store resulting rows in the database
-
-        Ok(())
-    }
-
-    pub async fn get_deprecation_timestamp_logs(
-        &self,
-        start_block: u64,
-        end_block: u64,
-    ) -> Result<Vec<Log>, Box<dyn Error>> {
-        let filter = Filter::new()
-            .address(self.inner.address())
-            .from_block(start_block)
-            .to_block(end_block)
-            .topic0(get_signature_topic(SET_DEPRECATION_TIMESTAMP_SIGNATURE));
-        let logs = get_logs(self.provider.clone(), &filter).await?;
-
-        Ok(logs)
-    }
-
-    async fn process_deprecation_timestamp_log(&self, log: &Log) -> Result<(), Box<dyn Error>> {
-        let parsed_log: SetDeprecationTimestamp = parse_log(log.clone()).unwrap();
-        let _old_timestamp = parsed_log.oldTimestamp.as_u32();
-        let _new_timestamp = parsed_log.newTimestamp.as_u32();
-
-        // TODO: Return proper rows to be stored
-
-        Ok(())
-    }
-
-    pub async fn persist_deprecation_timestamp_log(
-        &self,
-        _store: &Store,
-        log: &Log,
-        _chain_id: u32,
-        _timestamp: i64,
-    ) -> Result<(), Box<dyn Error>> {
-        self.process_deprecation_timestamp_log(log).await?;
-
-        // TODO: store deprecation timestamp in db
-
-        Ok(())
-    }
-
-    pub async fn persist_many_deprecation_timestamp_logs(
-        &self,
-        _store: &Store,
-        logs: Vec<Log>,
-        _chain_id: u32,
-        _timestamps: &[u32],
-    ) -> Result<(), Box<dyn Error>> {
-        for log in logs {
-            self.process_deprecation_timestamp_log(&log).await?;
-        }
-
-        // TODO: store deprecation timestamps in db
 
         Ok(())
     }

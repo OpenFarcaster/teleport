@@ -5,22 +5,25 @@ pub mod sync;
 pub mod validation;
 
 use dotenv::dotenv;
-use ethers::prelude::{Http, Provider};
+use ethers::{prelude::Provider, providers::Http};
 use figment::{
     providers::{Env, Format, Toml},
     Figment,
 };
 use libp2p::PeerId;
 use libp2p::{identity::ed25519, Multiaddr};
-use log::{self, debug};
+use log::{self};
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
 use serde::Deserialize;
-use std::fs::{self, canonicalize};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
+use std::{
+    fs::{self, canonicalize},
+    sync::{Arc, Mutex},
+};
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
 use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
@@ -62,7 +65,8 @@ async fn main() {
         .extract()
         .expect("configuration error");
 
-    debug!("Config: {:#?}", config);
+    // Load Persistent State
+    let state = Arc::new(Mutex::new(teleport_common::state::PersistentState::load()));
 
     // run database migrations
     let store = teleport_storage::Store::new(config.db_path).await;
@@ -77,6 +81,7 @@ async fn main() {
 
     let mut indexer = Indexer::new(
         store.clone(),
+        state.clone(),
         provider,
         config.chain_id,
         config.id_registry_address,
@@ -159,6 +164,7 @@ async fn main() {
     subscribe_task.await.unwrap();
 }
 
+#[allow(unused)]
 fn start(args: teleport_cli::start::StartCommand) {
     log::info!("Teleport Starting...");
 

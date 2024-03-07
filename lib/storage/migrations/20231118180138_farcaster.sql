@@ -2,7 +2,6 @@
 
 --- chain events
 CREATE TABLE IF NOT EXISTS chain_events (
-    id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     block_timestamp DATETIME NOT NULL,
     fid INTEGER NOT NULL,
@@ -14,13 +13,13 @@ CREATE TABLE IF NOT EXISTS chain_events (
     block_hash BLOB NOT NULL,
     transaction_hash BLOB NOT NULL,
     body TEXT NOT NULL,
-    raw BLOB NOT NULL
+    raw BLOB NOT NULL,
+    PRIMARY KEY (transaction_hash, log_index)
 );
 
 CREATE INDEX IF NOT EXISTS chain_events_fid_index ON chain_events(fid);
 CREATE INDEX IF NOT EXISTS chain_events_block_hash_index ON chain_events(block_hash);
 CREATE INDEX IF NOT EXISTS chain_events_block_timestamp_index ON chain_events(block_timestamp);
-CREATE UNIQUE INDEX IF NOT EXISTS chain_events_transaction_hash_index ON chain_events(transaction_hash);
 
 ---- FID
 CREATE TABLE IF NOT EXISTS fids (
@@ -28,11 +27,13 @@ CREATE TABLE IF NOT EXISTS fids (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     registered_at TEXT NOT NULL,
-    chain_event_id TEXT NOT NULL,  -- UUIDs are stored as TEXT in SQLite
+    transaction_hash BLOB NOT NULL,
+    log_index SMALLINT NOT NULL,
     custody_address BLOB NOT NULL,
     recovery_address BLOB NOT NULL,
     PRIMARY KEY (fid),
-    FOREIGN KEY (chain_event_id) REFERENCES chain_events(id) ON DELETE CASCADE
+    UNIQUE (transaction_hash, log_index),
+    FOREIGN KEY (transaction_hash, log_index) REFERENCES chain_events(transaction_hash, log_index) ON DELETE CASCADE
 );
 
 --- Signers
@@ -40,12 +41,14 @@ CREATE TABLE IF NOT EXISTS signers (
     id TEXT PRIMARY KEY,  -- UUID as TEXT
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    added_at TEXT NOT NULL,
-    removed_at TEXT,
+    added_at DATETIME NOT NULL,
+    removed_at DATETIME,
     fid INTEGER NOT NULL,
     requester_fid INTEGER NOT NULL,
-    add_chain_event_id TEXT NOT NULL,  -- UUID as TEXT
-    remove_chain_event_id TEXT,
+    add_transaction_hash BLOB NOT NULL,
+    add_log_index SMALLINT NOT NULL,
+    remove_transaction_hash BLOB,
+    remove_log_index SMALLINT,
     key_type SMALLINT NOT NULL,
     metadata_type SMALLINT NOT NULL,
     key BLOB NOT NULL,
@@ -53,12 +56,33 @@ CREATE TABLE IF NOT EXISTS signers (
     UNIQUE (fid, key),
     FOREIGN KEY (fid) REFERENCES fids(fid) ON DELETE CASCADE,
     FOREIGN KEY (requester_fid) REFERENCES fids(fid) ON DELETE CASCADE,
-    FOREIGN KEY (add_chain_event_id) REFERENCES chain_events(id) ON DELETE CASCADE,
-    FOREIGN KEY (remove_chain_event_id) REFERENCES chain_events(id) ON DELETE CASCADE
+    UNIQUE (add_transaction_hash, add_log_index),
+    UNIQUE (remove_transaction_hash, remove_log_index),
+    FOREIGN KEY (add_transaction_hash, add_log_index) REFERENCES chain_events(transaction_hash, log_index) ON DELETE CASCADE,
+    FOREIGN KEY (remove_transaction_hash, remove_log_index) REFERENCES chain_events(transaction_hash, log_index) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS signers_fid_index ON signers(fid);
 CREATE INDEX IF NOT EXISTS signers_requester_fid_index ON signers(requester_fid);
+
+---- storage allocations
+CREATE TABLE IF NOT EXISTS storage_allocations (
+    id TEXT,  -- UUID as TEXT
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    rented_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    transaction_hash BLOB NOT NULL,
+    log_index SMALLINT NOT NULL,
+    fid INTEGER NOT NULL,
+    units INTEGER NOT NULL,
+    payer BLOB NOT NULL,
+    PRIMARY KEY (id),
+    UNIQUE (transaction_hash, log_index),
+    FOREIGN KEY (transaction_hash, log_index) REFERENCES chain_events(transaction_hash, log_index) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS storage_allocations_fid_expires_at_index ON storage_allocations(fid, expires_at);
 
 --- username proofs
 CREATE TABLE IF NOT EXISTS username_proofs (
@@ -235,19 +259,3 @@ CREATE TABLE IF NOT EXISTS user_data (
 
 CREATE UNIQUE INDEX IF NOT EXISTS user_data_fid_type_unique ON user_data (fid, type);
 
----- storage allocations
-CREATE TABLE IF NOT EXISTS storage_allocations (
-    id TEXT,  -- UUID as TEXT
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    rented_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL,
-    chain_event_id TEXT NOT NULL,
-    fid INTEGER NOT NULL,
-    units INTEGER NOT NULL,
-    payer BLOB NOT NULL,
-    PRIMARY KEY (id),
-    FOREIGN KEY (chain_event_id) REFERENCES chain_events(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS storage_allocations_fid_expires_at_index ON storage_allocations(fid, expires_at);
