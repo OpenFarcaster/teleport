@@ -164,8 +164,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         sync_block_range_size: u64,
     ) -> Result<(), Box<dyn Error>> {
         let mut current_block = start_block;
-        let block_range = end_block - start_block;
-        let pb = ProgressBar::new(block_range);
+        let pb = ProgressBar::new(end_block - FARCASTER_START_BLOCK);
         pb.set_style(
             ProgressStyle::with_template(
                 "Syncing Blocks: [{elapsed_precise}] [{percent_precise}%] [{wide_bar:.cyan/blue}] {msg} (ETA: {eta_precise})",
@@ -175,7 +174,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
         );
 
         while current_block <= end_block {
-            pb.set_position(current_block - start_block);
+            pb.set_position(current_block - FARCASTER_START_BLOCK);
             pb.set_message(format!("{}/{}", current_block, end_block));
 
             let start = current_block;
