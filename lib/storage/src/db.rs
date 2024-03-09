@@ -83,7 +83,7 @@ impl ChainEventRow {
 }
 
 pub struct FidRow {
-    pub fid: i64,
+    pub fid: u64,
     pub registered_at: i64,
     pub transaction_hash: Vec<u8>,
     pub log_index: u32,
@@ -92,12 +92,12 @@ pub struct FidRow {
 }
 
 pub struct FidTransfer {
-    pub fid: u32,
+    pub fid: u64,
     pub custody_address: [u8; 20],
 }
 
 pub struct FidRecoveryUpdate {
-    pub fid: u32,
+    pub fid: u64,
     pub recovery_address: [u8; 20],
 }
 

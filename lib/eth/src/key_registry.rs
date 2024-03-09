@@ -15,7 +15,7 @@ use teleport_common::protobufs::generated::{
     on_chain_event, OnChainEvent, OnChainEventType, SignerEventBody, SignerEventType,
     SignerMigratedEventBody,
 };
-use teleport_storage::db::{self};
+use teleport_storage::db::{self, ChainEventRow, SignerRemoved, SignerRow};
 use teleport_storage::Store;
 
 // Overriding the `signature` is required here due to a bug in ethers-rs that happens if we mention the `key` parameter as `Bytes`
@@ -149,151 +149,54 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
             let timestamp = timestamps[i];
 
             if log.topics[0] == get_signature_topic(ADD_SIGNER_SIGNATURE) {
-                let Ok(parsed_log) = parse_log::<Add>(log.clone()) else {
-                    warn!("Failed to parse Add event args {:?}", log);
-                    continue;
-                };
-
-                let signer_event_body = SignerEventBody {
-                    event_type: SignerEventType::Add as i32,
-                    key: parsed_log.keyBytes.to_vec(),
-                    key_type: parsed_log.keyType,
-                    metadata: parsed_log.metadata.to_vec(),
-                    metadata_type: parsed_log.metadataType as u32,
-                };
-
-                let onchain_event = OnChainEvent {
-                    r#type: OnChainEventType::EventTypeSigner as i32,
-                    chain_id,
-                    block_number: log.block_number.unwrap().as_u32(),
-                    block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-                    block_timestamp: timestamp as u64,
-                    transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    log_index: log.log_index.unwrap().as_u32(),
-                    fid: parsed_log.fid.as_u64(),
-                    tx_index: log.transaction_index.unwrap().as_u32(),
-                    version: 2,
-                    body: Some(on_chain_event::Body::SignerEventBody(
-                        signer_event_body.clone(),
-                    )),
-                };
-
-                let signer_request = Contract::<T>::decode_metadata(log);
-                let metadata_json = serde_json::to_string(&signer_request).unwrap();
-
-                let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
-                let signer_row = db::SignerRow::new(
-                    &signer_event_body,
-                    &onchain_event,
-                    signer_request.request_fid,
-                    metadata_json,
-                );
+                let (chain_events_row, signer_row) =
+                    match self.process_add_log(log, timestamp, chain_id) {
+                        Ok((chain_events_row, signer_row)) => (chain_events_row, signer_row),
+                        Err(e) => {
+                            warn!("Failed to process Add log: {}", e);
+                            continue;
+                        }
+                    };
 
                 chain_events.push(chain_events_row);
                 signers.push(signer_row);
             } else if log.topics[0] == get_signature_topic(REMOVE_SIGNER_SIGNATURE) {
-                let Ok(parsed_log) = parse_log::<Remove>(log.clone()) else {
-                    warn!("Failed to parse Remove event args {:?}", log);
-                    continue;
-                };
-
-                let signer_event_body = SignerEventBody {
-                    event_type: SignerEventType::Remove as i32,
-                    key: parsed_log.keyBytes.to_vec(),
-                    key_type: 0,
-                    metadata: vec![],
-                    metadata_type: 0,
-                };
-
-                let onchain_event = OnChainEvent {
-                    r#type: OnChainEventType::EventTypeSigner as i32,
-                    chain_id,
-                    block_number: log.block_number.unwrap().as_u32(),
-                    block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-                    block_timestamp: timestamp as u64,
-                    transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    log_index: log.log_index.unwrap().as_u32(),
-                    fid: parsed_log.fid.as_u64(),
-                    tx_index: log.transaction_index.unwrap().as_u32(),
-                    version: 2,
-                    body: Some(on_chain_event::Body::SignerEventBody(signer_event_body)),
-                };
-
-                let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
-                let signer_removed = db::SignerRemoved {
-                    fid: parsed_log.fid.as_u64(),
-                    key: parsed_log.keyBytes.to_vec(),
-                    remove_transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    remove_log_index: log.log_index.unwrap().as_u32(),
-                    removed_at: onchain_event.block_timestamp * 1000,
-                };
+                let (chain_events_row, signer_removed_update) =
+                    match self.process_remove_log(log, timestamp, chain_id) {
+                        Ok((chain_events_row, signer_removed_update)) => {
+                            (chain_events_row, signer_removed_update)
+                        }
+                        Err(e) => {
+                            warn!("Failed to process Remove log: {}", e);
+                            continue;
+                        }
+                    };
 
                 chain_events.push(chain_events_row);
-                signer_removed_updates.push(signer_removed);
+                signer_removed_updates.push(signer_removed_update);
             } else if log.topics[0] == get_signature_topic(ADMIN_RESET_SIGNATURE) {
-                let Ok(parsed_log) = parse_log::<AdminReset>(log.clone()) else {
-                    warn!("Failed to parse AdminReset event args {:?}", log);
-                    continue;
-                };
-
-                let signer_event_body = SignerEventBody {
-                    event_type: SignerEventType::AdminReset as i32,
-                    key: parsed_log.keyBytes.to_vec(),
-                    key_type: 0,
-                    metadata: vec![],
-                    metadata_type: 0,
-                };
-
-                let onchain_event = OnChainEvent {
-                    r#type: OnChainEventType::EventTypeSigner as i32,
-                    chain_id,
-                    block_number: log.block_number.unwrap().as_u32(),
-                    block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-                    block_timestamp: timestamp as u64,
-                    transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    log_index: log.log_index.unwrap().as_u32(),
-                    fid: parsed_log.fid.as_u64(),
-                    tx_index: log.transaction_index.unwrap().as_u32(),
-                    version: 2,
-                    body: Some(on_chain_event::Body::SignerEventBody(signer_event_body)),
-                };
-
-                let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
-                let signer_removed = db::SignerRemoved {
-                    fid: parsed_log.fid.as_u64(),
-                    key: parsed_log.keyBytes.to_vec(),
-                    remove_transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    remove_log_index: log.log_index.unwrap().as_u32(),
-                    removed_at: onchain_event.block_timestamp * 1000,
-                };
+                let (chain_events_row, signer_removed_update) =
+                    match self.process_admin_reset_log(log, timestamp, chain_id) {
+                        Ok((chain_events_row, signer_removed_update)) => {
+                            (chain_events_row, signer_removed_update)
+                        }
+                        Err(e) => {
+                            warn!("Failed to process AdminReset log: {}", e);
+                            continue;
+                        }
+                    };
 
                 chain_events.push(chain_events_row);
-                signer_removed_updates.push(signer_removed);
+                signer_removed_updates.push(signer_removed_update);
             } else if log.topics[0] == get_signature_topic(MIGRATED_SIGNATURE) {
-                let Ok(parsed_log) = parse_log::<Migrated>(log.clone()) else {
-                    warn!("Failed to parse Migrated event args {:?}", log);
-                    continue;
+                let chain_events_row = match self.process_migrated_log(log, timestamp, chain_id) {
+                    Ok(chain_events_row) => chain_events_row,
+                    Err(e) => {
+                        warn!("Failed to process Migrated log: {}", e);
+                        continue;
+                    }
                 };
 
-                let onchain_event = OnChainEvent {
-                    r#type: OnChainEventType::EventTypeSignerMigrated as i32,
-                    chain_id,
-                    block_number: log.block_number.unwrap().as_u32(),
-                    block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-                    block_timestamp: timestamp as u64,
-                    transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    log_index: log.log_index.unwrap().as_u32(),
-                    fid: 0u64,
-                    tx_index: log.transaction_index.unwrap().as_u32(),
-                    version: 2,
-                    body: Some(on_chain_event::Body::SignerMigratedEventBody(
-                        SignerMigratedEventBody {
-                            migrated_at: parsed_log.keysMigratedAt.as_u32(),
-                        },
-                    )),
-                };
-
-                let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
                 chain_events.push(chain_events_row);
             }
         }
@@ -353,6 +256,179 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         transaction.commit().await?;
 
         Ok(())
+    }
+
+    fn process_add_log(
+        &self,
+        log: &Log,
+        timestamp: u32,
+        chain_id: u32,
+    ) -> Result<(ChainEventRow, SignerRow), Box<dyn Error>> {
+        let parsed_log = match parse_log::<Add>(log.clone()) {
+            Ok(parsed_log) => parsed_log,
+            Err(e) => return Err(format!("Failed to parse Add event args: {:?}", e).into()),
+        };
+
+        let signer_event_body = SignerEventBody {
+            event_type: SignerEventType::Add as i32,
+            key: parsed_log.keyBytes.to_vec(),
+            key_type: parsed_log.keyType,
+            metadata: parsed_log.metadata.to_vec(),
+            metadata_type: parsed_log.metadataType as u32,
+        };
+
+        let onchain_event = OnChainEvent {
+            r#type: OnChainEventType::EventTypeSigner as i32,
+            chain_id,
+            block_number: log.block_number.unwrap().as_u32(),
+            block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
+            block_timestamp: timestamp as u64,
+            transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            log_index: log.log_index.unwrap().as_u32(),
+            fid: parsed_log.fid.try_into()?,
+            tx_index: log.transaction_index.unwrap().as_u32(),
+            version: 2,
+            body: Some(on_chain_event::Body::SignerEventBody(
+                signer_event_body.clone(),
+            )),
+        };
+
+        let signer_request = Contract::<T>::decode_metadata(log);
+        let metadata_json = serde_json::to_string(&signer_request).unwrap();
+
+        let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
+        let signer_row = db::SignerRow::new(
+            &signer_event_body,
+            &onchain_event,
+            signer_request.request_fid,
+            metadata_json,
+        );
+
+        Ok((chain_events_row, signer_row))
+    }
+
+    fn process_remove_log(
+        &self,
+        log: &Log,
+        timestamp: u32,
+        chain_id: u32,
+    ) -> Result<(ChainEventRow, SignerRemoved), Box<dyn Error>> {
+        let parsed_log = match parse_log::<Remove>(log.clone()) {
+            Ok(parsed_log) => parsed_log,
+            Err(e) => return Err(format!("Failed to parse Remove event args: {:?}", e).into()),
+        };
+
+        let signer_event_body = SignerEventBody {
+            event_type: SignerEventType::Remove as i32,
+            key: parsed_log.keyBytes.to_vec(),
+            key_type: 0,
+            metadata: vec![],
+            metadata_type: 0,
+        };
+
+        let onchain_event = OnChainEvent {
+            r#type: OnChainEventType::EventTypeSigner as i32,
+            chain_id,
+            block_number: log.block_number.unwrap().as_u32(),
+            block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
+            block_timestamp: timestamp as u64,
+            transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            log_index: log.log_index.unwrap().as_u32(),
+            fid: parsed_log.fid.try_into()?,
+            tx_index: log.transaction_index.unwrap().as_u32(),
+            version: 2,
+            body: Some(on_chain_event::Body::SignerEventBody(signer_event_body)),
+        };
+
+        let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
+        let signer_removed = db::SignerRemoved {
+            fid: parsed_log.fid.try_into()?,
+            key: parsed_log.keyBytes.to_vec(),
+            remove_transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            remove_log_index: log.log_index.unwrap().as_u32(),
+            removed_at: onchain_event.block_timestamp * 1000,
+        };
+
+        Ok((chain_events_row, signer_removed))
+    }
+
+    fn process_admin_reset_log(
+        &self,
+        log: &Log,
+        timestamp: u32,
+        chain_id: u32,
+    ) -> Result<(ChainEventRow, SignerRemoved), Box<dyn Error>> {
+        let parsed_log = match parse_log::<AdminReset>(log.clone()) {
+            Ok(parsed_log) => parsed_log,
+            Err(e) => return Err(format!("Failed to parse AdminReset event args: {:?}", e).into()),
+        };
+
+        let signer_event_body = SignerEventBody {
+            event_type: SignerEventType::AdminReset as i32,
+            key: parsed_log.keyBytes.to_vec(),
+            key_type: 0,
+            metadata: vec![],
+            metadata_type: 0,
+        };
+
+        let onchain_event = OnChainEvent {
+            r#type: OnChainEventType::EventTypeSigner as i32,
+            chain_id,
+            block_number: log.block_number.unwrap().as_u32(),
+            block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
+            block_timestamp: timestamp as u64,
+            transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            log_index: log.log_index.unwrap().as_u32(),
+            fid: parsed_log.fid.try_into()?,
+            tx_index: log.transaction_index.unwrap().as_u32(),
+            version: 2,
+            body: Some(on_chain_event::Body::SignerEventBody(signer_event_body)),
+        };
+
+        let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
+        let signer_removed = db::SignerRemoved {
+            fid: parsed_log.fid.try_into()?,
+            key: parsed_log.keyBytes.to_vec(),
+            remove_transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            remove_log_index: log.log_index.unwrap().as_u32(),
+            removed_at: onchain_event.block_timestamp * 1000,
+        };
+
+        Ok((chain_events_row, signer_removed))
+    }
+
+    fn process_migrated_log(
+        &self,
+        log: &Log,
+        timestamp: u32,
+        chain_id: u32,
+    ) -> Result<ChainEventRow, Box<dyn Error>> {
+        let parsed_log = match parse_log::<Migrated>(log.clone()) {
+            Ok(parsed_log) => parsed_log,
+            Err(e) => return Err(format!("Failed to parse Migrated event args: {:?}", e).into()),
+        };
+
+        let onchain_event = OnChainEvent {
+            r#type: OnChainEventType::EventTypeSignerMigrated as i32,
+            chain_id,
+            block_number: log.block_number.unwrap().as_u32(),
+            block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
+            block_timestamp: timestamp as u64,
+            transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            log_index: log.log_index.unwrap().as_u32(),
+            fid: 0u64,
+            tx_index: log.transaction_index.unwrap().as_u32(),
+            version: 2,
+            body: Some(on_chain_event::Body::SignerMigratedEventBody(
+                SignerMigratedEventBody {
+                    migrated_at: parsed_log.keysMigratedAt.as_u32(),
+                },
+            )),
+        };
+
+        let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
+
+        Ok(chain_events_row)
     }
 
     fn decode_metadata(log: &Log) -> SignerRequestMetadata {

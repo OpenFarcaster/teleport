@@ -4,7 +4,7 @@ use ethers::{
     providers::{JsonRpcClient, Provider},
     types::{Address, Filter, Log, U256},
 };
-use log::{error, warn};
+use log::{error, info, warn};
 use sqlx::Acquire;
 use std::sync::Arc;
 use std::{error::Error, iter::zip};
@@ -12,7 +12,7 @@ use teleport_common::{
     protobufs::generated::{on_chain_event, OnChainEvent, OnChainEventType, StorageRentEventBody},
     time::block_timestamp_to_farcaster_time,
 };
-use teleport_storage::db::{self};
+use teleport_storage::db::{self, ChainEventRow, StorageAllocationRow};
 use teleport_storage::Store;
 
 pub const RENT_SIGNATURE: &str = "Rent(address,uint256,uint256)";
@@ -86,51 +86,19 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
                 continue;
             }
 
+            let timestamp = timestamps[i];
+
             if log.topics[0] == get_signature_topic(RENT_SIGNATURE) {
-                let Ok(parsed_log) = parse_log::<Rent>(log.clone()) else {
-                    warn!("Failed to parse Rent event args {:?}", log);
-                    continue;
-                };
-
-                let timestamp = timestamps[i];
-                let Ok(timestamp_as_fc_time) = block_timestamp_to_farcaster_time(timestamp) else {
-                    error!("Failed to parse block timestamp {:?}", timestamp);
-                    continue;
-                };
-
-                let expiry = timestamp_as_fc_time + RENT_EXPIRY_IN_SECONDS;
-                let storage_rent_event_body = StorageRentEventBody {
-                    payer: parsed_log.payer.as_bytes().to_vec(),
-                    units: parsed_log.units.as_u32(),
-                    expiry,
-                };
-
-                let onchain_event = OnChainEvent {
-                    r#type: OnChainEventType::EventTypeStorageRent as i32,
-                    chain_id,
-                    block_number: log.block_number.unwrap().as_u32(),
-                    block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
-                    block_timestamp: timestamp as u64,
-                    transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    log_index: log.log_index.unwrap().as_u32(),
-                    fid: parsed_log.fid.as_u64(),
-                    tx_index: log.transaction_index.unwrap().as_u32(),
-                    version: 2,
-                    body: Some(on_chain_event::Body::StorageRentEventBody(
-                        storage_rent_event_body,
-                    )),
-                };
-
-                let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
-                let storage_allocations_row = db::StorageAllocationRow::new(
-                    timestamp_as_fc_time.into(),
-                    expiry,
-                    log.transaction_hash.unwrap().as_bytes().to_vec(),
-                    log.log_index.unwrap().as_u32(),
-                    parsed_log.fid.as_u64(),
-                    parsed_log.units.as_u32(),
-                    parsed_log.payer.as_bytes().to_vec(),
-                );
+                let (chain_events_row, storage_allocations_row) =
+                    match self.process_rent_log(log, timestamp, chain_id) {
+                        Ok((chain_events_row, storage_allocations_row)) => {
+                            (chain_events_row, storage_allocations_row)
+                        }
+                        Err(e) => {
+                            warn!("Failed to process Rent log: {:?}", e);
+                            continue;
+                        }
+                    };
 
                 chain_events.push(chain_events_row);
                 storage_allocations.push(storage_allocations_row);
@@ -177,5 +145,62 @@ impl<T: JsonRpcClient + Clone> Contract<T> {
         transaction.commit().await?;
 
         Ok(())
+    }
+
+    fn process_rent_log(
+        &self,
+        log: &Log,
+        timestamp: u32,
+        chain_id: u32,
+    ) -> Result<(ChainEventRow, StorageAllocationRow), Box<dyn Error>> {
+        let parsed_log = match parse_log::<Rent>(log.clone()) {
+            Ok(parsed_log) => parsed_log,
+            Err(e) => return Err(format!("Failed to parse Rent event args: {:?}", e).into()),
+        };
+
+        let timestamp_as_fc_time = match block_timestamp_to_farcaster_time(timestamp) {
+            Ok(timestamp_as_fc_time) => timestamp_as_fc_time,
+            Err(e) => {
+                return Err(
+                    format!("Failed to parse block timestamp: {:?} {:?}", timestamp, e).into(),
+                )
+            }
+        };
+
+        let expiry = timestamp_as_fc_time + RENT_EXPIRY_IN_SECONDS;
+        let storage_rent_event_body = StorageRentEventBody {
+            payer: parsed_log.payer.as_bytes().to_vec(),
+            units: parsed_log.units.as_u32(),
+            expiry,
+        };
+
+        let onchain_event = OnChainEvent {
+            r#type: OnChainEventType::EventTypeStorageRent as i32,
+            chain_id,
+            block_number: log.block_number.unwrap().as_u32(),
+            block_hash: log.block_hash.unwrap().to_fixed_bytes().to_vec(),
+            block_timestamp: timestamp as u64,
+            transaction_hash: log.transaction_hash.unwrap().as_bytes().to_vec(),
+            log_index: log.log_index.unwrap().as_u32(),
+            fid: parsed_log.fid.try_into()?,
+            tx_index: log.transaction_index.unwrap().as_u32(),
+            version: 2,
+            body: Some(on_chain_event::Body::StorageRentEventBody(
+                storage_rent_event_body,
+            )),
+        };
+
+        let chain_events_row = db::ChainEventRow::new(&onchain_event, log.data.to_vec());
+        let storage_allocations_row = db::StorageAllocationRow::new(
+            timestamp_as_fc_time.into(),
+            expiry,
+            log.transaction_hash.unwrap().as_bytes().to_vec(),
+            log.log_index.unwrap().as_u32(),
+            parsed_log.fid.try_into()?,
+            parsed_log.units.as_u32(),
+            parsed_log.payer.as_bytes().to_vec(),
+        );
+
+        Ok((chain_events_row, storage_allocations_row))
     }
 }
