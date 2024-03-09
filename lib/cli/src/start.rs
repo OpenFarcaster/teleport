@@ -1,8 +1,6 @@
 use clap::Parser;
 use std::path::PathBuf;
 
-const PEER_ID_FILENAME: &str = "id.protobuf";
-const DEFAULT_PEER_ID_DIR: &str = "./.hub";
 const DEFAULT_PEER_ID_LOCATION: &str = "./.hub/default_id.protobuf";
 const DEFAULT_CHUNK_SIZE: u64 = 10000;
 const DEFAULT_FNAME_SERVER_URL: &str = "https://fnames.farcaster.xyz";
@@ -16,7 +14,9 @@ pub struct TeleportOptions {
     )]
     pub network: Option<String>,
 
-    #[arg(short, long, help = "Path to the PeerId file.")]
+    #[arg(short, long, 
+        help = format!("The URL for the FName registry server (default: {})", DEFAULT_PEER_ID_LOCATION)
+    )]
     pub id: Option<PathBuf>,
 
     #[arg(long, help = "The FID of the Hub operator")]
@@ -247,7 +247,7 @@ pub struct DebuggingOptions {
 
     #[arg(
         long,
-        help = "The number of blocks to batch when syncing historical events from Farcaster contracts. (default: DEFAULT_CHUNK_SIZE)"
+        help = format!("The number of blocks to batch when syncing historical events from Farcaster contracts. (default: {})", DEFAULT_CHUNK_SIZE)
     )]
     pub chunk_size: Option<u64>,
 

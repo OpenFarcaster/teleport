@@ -1,1 +1,0 @@
-UPDATE fids SET custody_address = ? WHERE fid = ?;

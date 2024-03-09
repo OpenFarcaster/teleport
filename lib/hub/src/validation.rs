@@ -72,20 +72,14 @@ impl<'a> Validator<'a> {
                     &self.message.hash,
                     &pub_key,
                 ) {
-                    Ok(_) => {
-                        return Ok(());
-                    }
-                    Err(err) => {
-                        return Err(HubError::Unknown(err.to_string()));
-                    }
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(HubError::Unknown(err.to_string())),
                 }
             }
-            _ => {
-                return Err(HubError::Unknown(format!(
-                    "Unknown signature scheme: {:?}",
-                    self.message.signature_scheme
-                )));
-            }
+            _ => Err(HubError::Unknown(format!(
+                "Unknown signature scheme: {:?}",
+                self.message.signature_scheme
+            ))),
         }
     }
 

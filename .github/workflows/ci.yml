@@ -12,8 +12,8 @@ jobs:
     name: "Check"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v3"
-      - uses: "arduino/setup-protoc@v2"
+      - uses: "actions/checkout@v4"
+      - uses: "arduino/setup-protoc@v3"
       - uses: "dtolnay/rust-toolchain@stable"
       - run: "cargo check"
 
@@ -21,8 +21,8 @@ jobs:
     name: "Test Suite"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v3"
-      - uses: "arduino/setup-protoc@v2"
+      - uses: "actions/checkout@v4"
+      - uses: "arduino/setup-protoc@v3"
       - uses: "dtolnay/rust-toolchain@stable"
       - run: "cargo test"
 
@@ -30,8 +30,8 @@ jobs:
     name: "Rustfmt"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v3"
-      - uses: "arduino/setup-protoc@v2"
+      - uses: "actions/checkout@v4"
+      - uses: "arduino/setup-protoc@v3"
       - uses: "dtolnay/rust-toolchain@nightly"
         with:
           components: "rustfmt"
@@ -41,8 +41,8 @@ jobs:
     name: "Clippy"
     runs-on: "ubuntu-latest"
     steps:
-      - uses: "actions/checkout@v3"
-      - uses: "arduino/setup-protoc@v2"
+      - uses: "actions/checkout@v4"
+      - uses: "arduino/setup-protoc@v3"
       - uses: "dtolnay/rust-toolchain@nightly"
         with:
           components: "clippy"

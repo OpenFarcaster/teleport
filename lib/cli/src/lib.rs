@@ -31,7 +31,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    Start(StartCommand),
+    Start(Box<StartCommand>),
     #[command(name = "identity", about = "Create and verify Peer IDs")]
     Identity(IdentityArgs),
     Status(StatusCommand),

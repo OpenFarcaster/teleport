@@ -1,1 +1,0 @@
-SELECT key_type, metadata FROM signers WHERE key = ?;
