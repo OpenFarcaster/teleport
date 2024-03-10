@@ -30,6 +30,7 @@ libp2p = { version = "0.52.0", features = [
     "ed25519",
     "identify",
     "ping",
+    "tls",
 ] }
 prost = "0.11.9"
 serde = { version = "1.0.183", features = ["derive"] }
@@ -60,7 +61,7 @@ alloy-primitives = { version = "0.5.3" }
 futures = { version = "0.3.17" }
 figment = { version = "0.10.12", features = ["toml", "env"] }
 dotenv = { version = "0.15.0" }
-
+indicatif = { version = "0.17.8" }
 
 [profile.release]
 codegen-units = 1

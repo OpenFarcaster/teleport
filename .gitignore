@@ -4,3 +4,4 @@ expanded.rs
 *.db
 *.db-*
 .idea/
+state.json

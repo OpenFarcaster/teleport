@@ -11,6 +11,7 @@ use libp2p::swarm::derive_prelude::Either;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{futures::channel::mpsc, Swarm};
 use libp2p::{Multiaddr, PeerId};
+use log::error;
 use prost::Message;
 use teleport_common::errors::{BadRequestType, HubError, UnavailableType};
 use teleport_common::protobufs::{self, generated};
@@ -384,24 +385,32 @@ impl EventLoop {
                 let res = self.gossip_message(message);
 
                 if let Err(err) = res {
-                    println!("Failed to gossip: {:?}", err);
+                    error!("Failed to gossip: {:?}", err);
                 }
             }
             Command::GossipContactInfo { contact_info } => {
-                self.gossip_contact_info(contact_info);
+                let res = self.gossip_contact_info(contact_info);
+
+                if let Err(err) = res {
+                    error!("Failed to gossip contact info: {:?}", err)
+                }
             }
             Command::DialMultiAddr { addr } => {
                 let res = self.dial_multi_addr(addr);
 
                 if let Err(err) = res {
-                    println!("Failed to dial: {:?}", err);
+                    error!("Failed to dial: {:?}", err);
                 }
             }
             Command::GetState { sender } => {
                 let mut state = self.state.clone();
                 state.external_addrs = self.swarm.external_addresses().map(|a| a.clone()).collect();
 
-                sender.send(state);
+                let res = sender.send(state);
+
+                if let Err(err) = res {
+                    error!("Failed to send state: {:?}", err);
+                }
             }
         }
     }
@@ -414,7 +423,11 @@ impl EventLoop {
         let bootstrap_addrs = self.state.bootstrap_addrs.clone();
 
         for addr in bootstrap_addrs {
-            self.dial_multi_addr(addr);
+            let res = self.dial_multi_addr(addr);
+
+            if let Err(err) = res {
+                error!("Failed to dial bootstrap addr: {:?}", err);
+            }
         }
     }
 
