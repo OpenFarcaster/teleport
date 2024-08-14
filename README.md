@@ -10,7 +10,7 @@ If you are new to Farcaster Hubs and/or Teleport - here's a quick video that doe
 
 Note that the codebase will outpace the video, and things mentioned `TODO` in the video might have been done now.
 
-<iframe width="560" height="315" src="https://www.youtube.com/embed/YXu2DGMhIao" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+[![Video](https://img.youtube.com/vi/YXu2DGMhIao/0.jpg)](https://www.youtube.com/watch?v=YXu2DGMhIao)
 
 ## Rough Features
 
@@ -32,6 +32,12 @@ A lot is still left to do:
 
 ## Prerequisites
 
+Run the following command to install all the prerequisites for you automatically and if it fails for any reason then simply manually install them.
+
+``` bash
+make install
+```
+
 - Rust
 - Protobufs Compiler (`brew install protobuf` or `apt install -y protobuf-compiler`)
 - SQLx CLI (`cargo install sqlx-cli`)
@@ -42,7 +48,16 @@ Up until recently, there was a Protobuf incompatibility issue with using `prost`
 
 In a recent update the Protobuf schema was updated to add a new field that allows us to get by that issue by serializing the message differently. That hasn't been implemented yet in Teleport but technically we don't need to maintain a patched version of `prost` anymore.
 
-## Database
+
+## Setup the Hub
+
+Copy the example .env file using the following command and then place both your farcaster private key and optimism l2 key.
+
+``` bash
+cp env.example .env
+```
+
+### Setup the Database
 
 1. create the database
 
@@ -56,8 +71,9 @@ make db-create
 make db-migrate
 ```
 
-## Start the Hub
+
+### Start the hub
 
 ```bash
-FARCASTER_PRIV_KEY=<YOUR_PRIVATE_KEY> OPTIMISM_L2_RPC_URL=<RPC_URL_FOR_OP> cargo run
+cargo run
 ```
