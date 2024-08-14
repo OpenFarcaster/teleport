@@ -77,3 +77,17 @@ make db-migrate
 ```bash
 cargo run
 ```
+
+
+
+## Contributing
+
+Make sure to run the following command before pushing commits as this will run all the checks needed to pass the CI workflow.
+
+``` bash
+make verify
+```
+
+`
+
+
