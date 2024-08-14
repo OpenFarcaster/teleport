@@ -59,4 +59,28 @@ install:
 	fi
 	@echo "all prerequisites installed successfully!"
 
-.PHONY: db-create db-migrate db-query-prepare install
+check:
+	@echo "Check: Running cargo check"
+	cargo check
+
+test:
+	@echo "Test: Running cargo test"
+	cargo test
+
+fmt:
+	@echo "Fmt: Running cargo fmt"
+	cargo +nightly fmt --all -- --check
+
+clippy:
+	@echo "Clippy: Running cargo clippy"
+	cargo clippy -- -D warnings
+
+verify:
+	@echo "Running all checks"
+	@make check
+	@make test
+	@make fmt
+	@make clippy
+
+
+.PHONY: db-create db-migrate db-query-prepare install clippy fmt test check verify
