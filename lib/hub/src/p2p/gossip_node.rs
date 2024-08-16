@@ -3,10 +3,7 @@ use std::{net::TcpListener, str::FromStr};
 use crate::hub::AddrInfo;
 use libp2p::{
     core::upgrade,
-    futures::{
-        channel::{mpsc, oneshot},
-        prelude::*,
-    },
+    futures::channel::{mpsc, oneshot},
     gossipsub::{self, Message as GossipSubMessage, MessageAuthenticity, MessageId},
     identify, identity, noise, ping,
     swarm::SwarmBuilder,
