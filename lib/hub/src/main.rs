@@ -5,22 +5,25 @@ pub mod sync;
 pub mod validation;
 
 use dotenv::dotenv;
-use ethers::prelude::{Http, Provider};
+use ethers::{prelude::Provider, providers::Http};
 use figment::{
     providers::{Env, Format, Toml},
     Figment,
 };
 use libp2p::PeerId;
 use libp2p::{identity::ed25519, Multiaddr};
-use log;
+use log::{self};
 use p2p::gossip_node::NodeOptions;
 use prost::Message;
 use serde::Deserialize;
-use std::fs::{self, canonicalize};
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
+use std::{
+    fs::{self, canonicalize},
+    sync::{Arc, Mutex},
+};
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
 use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
@@ -45,6 +48,7 @@ struct Config {
     abi_dir: String,
     indexer_interval: u64,
     bootstrap_addrs: Vec<String>,
+    sync_block_range_size: u64,
 }
 
 #[tokio::main]
@@ -61,6 +65,9 @@ async fn main() {
         .extract()
         .expect("configuration error");
 
+    // Load Persistent State
+    let state = Arc::new(Mutex::new(teleport_common::state::PersistentState::load()));
+
     // run database migrations
     let store = teleport_storage::Store::new(config.db_path).await;
 
@@ -74,6 +81,7 @@ async fn main() {
 
     let mut indexer = Indexer::new(
         store.clone(),
+        state.clone(),
         provider,
         config.chain_id,
         config.id_registry_address,
@@ -89,12 +97,20 @@ async fn main() {
     let latest_block_num = indexer.get_latest_block().await.unwrap();
     let start_block_num = indexer.get_start_block().await;
     indexer
-        .sync(start_block_num, latest_block_num)
+        .sync(
+            start_block_num,
+            latest_block_num,
+            config.sync_block_range_size,
+        )
         .await
         .unwrap();
 
     // Subscribe to new events asynchronously
-    let subscribe_task = indexer.subscribe(latest_block_num + 1, config.indexer_interval);
+    let subscribe_task = indexer.subscribe(
+        latest_block_num + 1,
+        config.indexer_interval,
+        config.sync_block_range_size,
+    );
 
     let secret_key_hex = config.farcaster_priv_key;
     let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");
@@ -148,6 +164,7 @@ async fn main() {
     subscribe_task.await.unwrap();
 }
 
+#[allow(unused)]
 fn start(args: teleport_cli::start::StartCommand) {
     log::info!("Teleport Starting...");
 

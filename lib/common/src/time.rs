@@ -1,6 +1,7 @@
 use super::errors::*;
 
 const FARCASTER_EPOCH: i64 = 1609459200000;
+const FARCASTER_EPOCH_IN_SECONDS: u32 = 1609459200;
 
 pub fn get_farcaster_time() -> Result<u32, HubError> {
     to_farcaster_time(
@@ -26,6 +27,25 @@ pub fn to_farcaster_time(time: i64) -> Result<u32, HubError> {
         return Err(HubError::BadRequest(
             BadRequestType::InvalidParam,
             "time too far in future".to_string(),
+        ));
+    }
+
+    Ok(seconds_since_epoch.try_into().unwrap())
+}
+
+pub fn block_timestamp_to_farcaster_time(timestamp: u32) -> Result<u32, HubError> {
+    if timestamp < FARCASTER_EPOCH_IN_SECONDS {
+        return Err(HubError::BadRequest(
+            BadRequestType::InvalidParam,
+            "timestamp must be after Farcaster epoch (01/01/2021".to_string(),
+        ));
+    }
+
+    let seconds_since_epoch = timestamp - FARCASTER_EPOCH_IN_SECONDS;
+    if seconds_since_epoch as i64 > 2i64.pow(32) - 1 {
+        return Err(HubError::BadRequest(
+            BadRequestType::InvalidParam,
+            "timestamp too far in future".to_string(),
         ));
     }
 

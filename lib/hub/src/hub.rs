@@ -3,6 +3,7 @@ use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use teleport_common::protobufs::generated::*;
 use teleport_storage::Store;
 
+#[allow(unused)]
 enum HubSubmitSource {
     Gossip,
     RPC,
@@ -12,18 +13,21 @@ enum HubSubmitSource {
     FNameRegistry,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct TestUser {
     fid: u64,
     mnemonic: String,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct AddrInfo {
     pub id: PeerId,
     pub addrs: Vec<Multiaddr>,
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub struct HubOptions {
     pub network: FarcasterNetwork,
@@ -75,6 +79,7 @@ pub struct HubOptions {
     pub hub_operator_fid: Option<u64>,
 }
 
+#[allow(unused)]
 pub struct Hub {
     options: HubOptions,
     gossip_node: GossipNode,
