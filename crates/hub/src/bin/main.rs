@@ -37,7 +37,11 @@ async fn main() {
     let store = Store::new(config.clone()).await;
     store.migrate().await;
 
-    let mut indexer = Indexer::new(config.clone(), store.clone(), provider).await.unwrap();
+    let mut indexer = Indexer::new(config.clone(), store.clone(), provider)
+        .await
+        .unwrap();
+
+    let keys = Key::new(config.clone());
 
     // Fill in all registration events
     // syncs upto `latest_block_number`.
@@ -52,14 +56,6 @@ async fn main() {
     // Subscribe to new events asynchronously
     let subscribe_task = indexer.subscribe(latest_block_num + 1, config.indexer_interval);
 
-    let secret_key_hex = &config.farcaster_priv_key;
-    let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");
-    let secret_key = ed25519::SecretKey::try_from_bytes(&mut secret_key_bytes).unwrap();
-    let keypair = ed25519::Keypair::from(secret_key);
-    let pub_key = keypair.public();
-
-    log::info!("Public Key: {}", hex::encode(pub_key.to_bytes()));
-
     let bootstrap_nodes: Vec<Multiaddr> = config
         .clone()
         .bootstrap_addrs
@@ -67,11 +63,9 @@ async fn main() {
         .map(|addr| Multiaddr::from_str(addr).unwrap())
         .collect();
 
-    let id_keypair = libp2p::identity::Keypair::ed25519_from_bytes(&mut secret_key_bytes).unwrap();
-
     let node_options =
         NodeOptions::new(teleport_common::protobufs::generated::FarcasterNetwork::Mainnet)
-            .with_keypair(id_keypair)
+            .with_keypair(keys.id_keypair)
             .with_bootstrap_addrs(bootstrap_nodes);
 
     let mut gossip_node = p2p::gossip_node::GossipNode::new(node_options, store.clone());
