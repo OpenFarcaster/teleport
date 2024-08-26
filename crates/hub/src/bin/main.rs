@@ -1,8 +1,4 @@
 use ethers::prelude::{Http, Provider};
-use figment::{
-    providers::{Env, Format, Toml},
-    Figment,
-};
 use libp2p::PeerId;
 use libp2p::{identity::ed25519, Multiaddr};
 use log;
@@ -21,7 +17,6 @@ use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
 use teleport_eth::indexer::Indexer;
 use teleport_hub::{hub, p2p};
 use teleport_rpc::server::HubServer;
-use teleport_storage;
 use tonic::transport::Server;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";
@@ -35,23 +30,7 @@ async fn main() {
 
     let config: Config = Config::new();
 
-    // run database migrations
-    let store = teleport_storage::Store::new(config).await;
-
-    log::info!("Running database migrations...");
-
-    let provider = Provider::<Http>::try_from(config.optimism_l2_rpc_url).unwrap();
-
-    let mut indexer = Indexer::new(
-        store.clone(),
-        provider,
-        config.chain_id,
-        config.id_registry_address,
-        config.key_registry_address,
-        config.storage_registry_address,
-        config.abi_dir,
-    )
-    .unwrap();
+    let mut indexer = Indexer::<Http>::new(config).await.unwrap();
 
     // Fill in all registration events
     // syncs upto `latest_block_number`.
@@ -66,7 +45,7 @@ async fn main() {
     // Subscribe to new events asynchronously
     let subscribe_task = indexer.subscribe(latest_block_num + 1, config.indexer_interval);
 
-    let secret_key_hex = config.farcaster_priv_key;
+    let secret_key_hex = &config.farcaster_priv_key;
     let mut secret_key_bytes = hex::decode(secret_key_hex).expect("Invalid hex string");
     let secret_key = ed25519::SecretKey::try_from_bytes(&mut secret_key_bytes).unwrap();
     let keypair = ed25519::Keypair::from(secret_key);
@@ -74,7 +53,8 @@ async fn main() {
 
     log::info!("Public Key: {}", hex::encode(pub_key.to_bytes()));
 
-    let bootstrap_nodes = config
+    let bootstrap_nodes: Vec<Multiaddr> = config
+        .clone()
         .bootstrap_addrs
         .iter()
         .map(|addr| Multiaddr::from_str(addr).unwrap())

@@ -18,6 +18,7 @@ tonic = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 dotenv = { workspace = true }
+figment = { workspace = true }
 ed25519-dalek = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true }

@@ -31,5 +31,4 @@ ethers = { workspace = true }
 thiserror = { workspace = true }
 once_cell = { workspace = true }
 chrono = { workspace = true }
-figment = { workspace = true }
 serde = { workspace = true }

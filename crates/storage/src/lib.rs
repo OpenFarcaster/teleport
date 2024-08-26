@@ -4,7 +4,7 @@ use std::path::Path;
 
 use sqlx::sqlite::SqlitePool;
 
-use teleport_commong::config::Config;
+use teleport_common::config::Config;
 
 pub const DB_DIRECTORY: &str = ".";
 
@@ -15,18 +15,20 @@ pub struct Store {
 }
 
 impl Store {
-    pub async fn new(config: &Config) -> Self {
-        let path = config.db_path;
+    pub async fn new(config: Config) -> Self {
+        let path = &config.db_path;
         let conn = SqlitePool::connect(&path).await.unwrap();
 
         Self { conn, config }
     }
 
     pub async fn migrate(&self) {
-        let migrator = sqlx::migrate::Migrator::new(Path::new(self.config.db_migrations_path))
+        let migrator = sqlx::migrate::Migrator::new(Path::new(&self.config.db_migrations_path))
             .await
             .unwrap();
         migrator.run(&self.conn).await.unwrap();
+
+        log::info!("Running database migrations...");
     }
 }
 
@@ -41,9 +43,15 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let db_path = temp_dir.path().join("test.db");
         let db_name = format!("sqlite:{}", db_path.to_str().unwrap());
+
+        let config = Config {
+            db_path: db_name.clone(),
+            ..Default::default()
+        };
+
         sqlx::Sqlite::create_database(&db_name).await.unwrap();
 
-        let store = Store::new(db_name).await;
+        let store = Store::new(config).await;
         let mut conn = store.conn.acquire().await.unwrap();
         let test_query = r#"CREATE TABLE IF NOT EXISTS test (
                    id INTEGER PRIMARY KEY,

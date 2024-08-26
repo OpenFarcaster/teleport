@@ -41,7 +41,7 @@ struct Migrated {
 
 #[derive(Debug, Clone)]
 pub struct Contract<T> {
-    provider: Provider<T>,
+    provider: Arc<Provider<T>>,
     inner: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 

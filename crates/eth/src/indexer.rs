@@ -6,7 +6,8 @@ use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::{BlockNumber, Log, H256},
 };
-
+use teleport_common::config::Config;
+use std::sync::Arc;
 use std::collections::HashMap;
 use std::error::Error;
 use teleport_storage::{db, Store};
@@ -34,7 +35,7 @@ struct CollectedLogs {
 
 pub struct Indexer<T> {
     store: Store,
-    provider: Provider<T>,
+    provider: Arc<Provider<T>>,
     chain_id: u32,
     id_registry: id_registry::Contract<T>,
     key_registry: key_registry::Contract<T>,
@@ -43,28 +44,25 @@ pub struct Indexer<T> {
 }
 
 impl<T: JsonRpcClient + Clone> Indexer<T> {
-    pub fn new(
-        store: Store,
-        provider: Provider<T>,
-        chain_id: u32,
-        id_reg_address: String,
-        key_reg_address: String,
-        storage_reg_address: String,
-        abi_dir: String,
-    ) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(config: Config) -> Result<Self, Box<dyn Error>> {
+        let store = Store::new(config).await;
+        store.migrate().await;
+        let provider = Arc::new(Provider::<T>::try_from(config.optimism_l2_rpc_url).unwrap());
+        let abi_dir = config.abi_dir;
+
         let id_registry = id_registry::Contract::new(
             provider.clone(),
-            id_reg_address,
+            config.id_reg_address,
             format!("{}/IdRegistry.json", abi_dir),
         )?;
         let key_registry = key_registry::Contract::new(
             provider.clone(),
-            key_reg_address,
+            config.key_reg_address,
             format!("{}/KeyRegistry.json", abi_dir),
         )?;
         let storage_registry = storage_registry::Contract::new(
             provider.clone(),
-            storage_reg_address,
+            config.storage_reg_address,
             format!("{}/StorageRegistry.json", abi_dir),
         )?;
 
@@ -74,7 +72,7 @@ impl<T: JsonRpcClient + Clone> Indexer<T> {
             id_registry,
             key_registry,
             storage_registry,
-            chain_id,
+            chain_id: config.chain_id,
             block_timestamp_cache: HashMap::new(),
         })
     }

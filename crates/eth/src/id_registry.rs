@@ -52,7 +52,7 @@ struct ChangeRecoveryAddress {
 
 #[derive(Debug, Clone)]
 pub struct Contract<T> {
-    provider: Provider<T>,
+    provider: Arc<Provider<T>>,
     inner: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
@@ -63,13 +63,13 @@ pub const CHANGE_RECOVERY_ADDRESS_SIGNATURE: &str = "ChangeRecoveryAddress(uint2
 
 impl<T: JsonRpcClient + Clone> Contract<T> {
     pub fn new(
-        provider: Provider<T>,
+        provider: Arc<Provider<T>>,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
         let contract_abi = read_abi(abi_path)?;
         let addr: Address = contract_addr.parse()?;
-        let contract = EthContract::new(addr, contract_abi, Arc::new(provider.clone()));
+        let contract = EthContract::new(addr, contract_abi, provider.clone());
 
         Ok(Contract {
             provider,
@@ -514,9 +514,15 @@ mod tests {
     use sqlx::Row;
     use std::path::Path;
     use std::str::FromStr;
+    use teleport_common::config::Config;
 
     async fn setup_db() -> Store {
-        let store = Store::new("sqlite::memory:".to_string()).await;
+        let config = Config {
+            db_path: "sqlite::memory".to_string(),
+            ..Default::default()
+        };
+
+        let store = Store::new(config).await;
         let migrator = sqlx::migrate::Migrator::new(Path::new("../storage/migrations"))
             .await
             .unwrap();

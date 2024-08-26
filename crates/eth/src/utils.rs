@@ -45,7 +45,7 @@ pub async fn get_block_timestamp<T: JsonRpcClient + Clone>(
 }
 
 pub async fn get_logs<T: JsonRpcClient + Clone>(
-    provider: Provider<T>,
+    provider: Arc<Provider<T>>,
     filter: &Filter,
 ) -> Result<Vec<Log>, ProviderError> {
     let logs = loop {

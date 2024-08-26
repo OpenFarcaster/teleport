@@ -7,7 +7,7 @@ use figment::{
 use dotenv::dotenv;
 use serde::Deserialize;
 
-#[derive(Debug, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, Deserialize, Clone, Default)]
 pub struct Config {
     pub db_path: String,
     pub db_migrations_path: String,
@@ -24,6 +24,7 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
+
         dotenv().ok();
         // Load configuration from a TOML file and override with environment variables
         Figment::new()
@@ -32,4 +33,5 @@ impl Config {
             .extract()
             .expect("configuration error")
     }
+
 }
