@@ -580,7 +580,7 @@ mod tests {
             .expect("pushing mock log");
 
         let id_registry = Contract::new(
-            provider,
+            provider.into(),
             "0x00000000fc6c5f01fc30151999387bb99a9f489b".to_string(),
             "./abis/IdRegistry.json".to_string(),
         )

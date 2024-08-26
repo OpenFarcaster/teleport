@@ -6,10 +6,11 @@ use ethers::{
     providers::{JsonRpcClient, Middleware, Provider},
     types::{BlockNumber, Log, H256},
 };
-use teleport_common::config::Config;
-use std::sync::Arc;
+
 use std::collections::HashMap;
 use std::error::Error;
+use std::sync::Arc;
+use teleport_common::config::Config;
 use teleport_storage::{db, Store};
 use tokio;
 
@@ -44,25 +45,23 @@ pub struct Indexer<T> {
 }
 
 impl<T: JsonRpcClient + Clone> Indexer<T> {
-    pub async fn new(config: Config) -> Result<Self, Box<dyn Error>> {
-        let store = Store::new(config).await;
-        store.migrate().await;
-        let provider = Arc::new(Provider::<T>::try_from(config.optimism_l2_rpc_url).unwrap());
+    pub async fn new(config: Config, store: Store, provider: Arc<Provider<T>>) -> Result<Self, Box<dyn Error>> {
+
         let abi_dir = config.abi_dir;
 
         let id_registry = id_registry::Contract::new(
             provider.clone(),
-            config.id_reg_address,
+            config.id_registry_address,
             format!("{}/IdRegistry.json", abi_dir),
         )?;
         let key_registry = key_registry::Contract::new(
             provider.clone(),
-            config.key_reg_address,
+            config.key_registry_address,
             format!("{}/KeyRegistry.json", abi_dir),
         )?;
         let storage_registry = storage_registry::Contract::new(
             provider.clone(),
-            config.storage_reg_address,
+            config.storage_registry_address,
             format!("{}/StorageRegistry.json", abi_dir),
         )?;
 

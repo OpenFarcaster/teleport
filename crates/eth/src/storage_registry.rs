@@ -42,19 +42,19 @@ struct SetDeprecationTimestamp {
 
 #[derive(Debug, Clone)]
 pub struct Contract<T> {
-    provider: Provider<T>,
+    provider: Arc<Provider<T>>,
     inner: ContractInstance<Arc<Provider<T>>, Provider<T>>,
 }
 
 impl<T: JsonRpcClient + Clone> Contract<T> {
     pub fn new(
-        provider: Provider<T>,
+        provider: Arc<Provider<T>>,
         contract_addr: String,
         abi_path: String,
     ) -> Result<Self, Box<dyn Error>> {
         let contract_abi = read_abi(abi_path)?;
         let addr: Address = contract_addr.parse().unwrap();
-        let contract = EthContract::new(addr, contract_abi, Arc::new(provider.clone()));
+        let contract = EthContract::new(addr, contract_abi, provider.clone());
 
         Ok(Contract {
             provider,

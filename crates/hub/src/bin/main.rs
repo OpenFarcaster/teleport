@@ -10,6 +10,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
+use std::sync::Arc;
 use teleport_common::config::Config;
 use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
 use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
@@ -17,6 +18,7 @@ use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
 use teleport_eth::indexer::Indexer;
 use teleport_hub::{hub, p2p};
 use teleport_rpc::server::HubServer;
+use teleport_storage::Store;
 use tonic::transport::Server;
 
 const PEER_ID_FILENAME: &str = "id.protobuf";
@@ -30,7 +32,12 @@ async fn main() {
 
     let config: Config = Config::new();
 
-    let mut indexer = Indexer::<Http>::new(config).await.unwrap();
+    let provider = Arc::new(Provider::<Http>::try_from(&config.optimism_l2_rpc_url).unwrap());
+
+    let store = Store::new(config.clone()).await;
+    store.migrate().await;
+
+    let mut indexer = Indexer::new(config.clone(), store.clone(), provider).await.unwrap();
 
     // Fill in all registration events
     // syncs upto `latest_block_number`.

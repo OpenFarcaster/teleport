@@ -27,6 +27,7 @@ alloy-dyn-abi = { workspace = true }
 alloy-primitives = { workspace = true }
 log = { workspace = true }
 futures = { workspace = true }
+url = "2.5.2"
 
 [build-dependencies]
 ethers = { workspace = true }

@@ -8,6 +8,7 @@ use ethers::{
 };
 use std::error::Error;
 use std::fs;
+use std::sync::Arc;
 
 pub fn read_abi(path: String) -> Result<Abi, Box<dyn Error>> {
     let abi_str = fs::read_to_string(path)?;
@@ -20,7 +21,7 @@ pub fn get_signature_topic(signature: &str) -> H256 {
 }
 
 pub async fn get_block_timestamp<T: JsonRpcClient + Clone>(
-    provider: Provider<T>,
+    provider: Arc<Provider<T>>,
     block_hash: H256,
 ) -> Result<u32, Box<dyn Error>> {
     let block = loop {
