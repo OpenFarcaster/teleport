@@ -5493,6 +5493,7 @@ name = "teleport_common"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "dotenv",
  "ed25519-dalek",
  "hex",
  "libp2p",
@@ -5535,7 +5536,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
- "dotenv",
  "env_logger",
  "ethers",
  "figment",
