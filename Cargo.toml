@@ -1,16 +1,12 @@
 [workspace]
 members = [
-    "lib/cli",
-    "lib/common",
-    "lib/rpc",
-    "lib/hub",
-    "lib/eth",
-    "lib/storage",
+"crates/*"
 ]
+
 resolver = "2"
 
 [workspace.package]
-authors = ["openfarcaster"]
+authors = ["openfarcaster Hamza Hamud <self@hamzahamud.com>"]
 name = "teleport"
 license = "MIT"
 version = "0.1.0"
@@ -66,3 +62,4 @@ dotenv = { version = "0.15.0" }
 codegen-units = 1
 lto = true
 strip = true
+
