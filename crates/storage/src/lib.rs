@@ -16,8 +16,9 @@ pub struct Store {
 
 impl Store {
     pub async fn new(config: Config) -> Self {
-        let path = &config.db_path;
-        let conn = SqlitePool::connect(&path).await.unwrap();
+        let conn = SqlitePool::connect(&config.db_path)
+            .await
+            .expect("failed to connect to the database");
 
         Self { conn, config }
     }

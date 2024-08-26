@@ -45,8 +45,11 @@ pub struct Indexer<T> {
 }
 
 impl<T: JsonRpcClient + Clone> Indexer<T> {
-    pub async fn new(config: Config, store: Store, provider: Arc<Provider<T>>) -> Result<Self, Box<dyn Error>> {
-
+    pub async fn new(
+        config: Config,
+        store: Store,
+        provider: Arc<Provider<T>>,
+    ) -> Result<Self, Box<dyn Error>> {
         let abi_dir = config.abi_dir;
 
         let id_registry = id_registry::Contract::new(
