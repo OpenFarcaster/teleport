@@ -1,5 +1,8 @@
-pub mod hub;
-pub mod key;
-pub mod p2p;
-pub mod sync;
-pub mod validation;
+mod hub;
+mod key;
+mod p2p;
+mod sync;
+mod validation;
+
+// Re-export hub
+pub use crate::hub::Hub;

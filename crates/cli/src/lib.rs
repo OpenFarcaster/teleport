@@ -18,6 +18,7 @@ pub mod reset;
 pub mod start;
 pub mod status;
 
+
 #[derive(Parser, Debug)]
 #[command(name = "teleport")]
 #[command(
@@ -28,6 +29,7 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
 }
+
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {

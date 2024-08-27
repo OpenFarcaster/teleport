@@ -23,13 +23,14 @@ impl Store {
         Self { conn, config }
     }
 
-    pub async fn migrate(&self) {
-        let migrator = sqlx::migrate::Migrator::new(Path::new(&self.config.db_migrations_path))
-            .await
-            .unwrap();
-        migrator.run(&self.conn).await.unwrap();
+    pub async fn migrate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let migrator =
+            sqlx::migrate::Migrator::new(Path::new(&self.config.db_migrations_path)).await?;
+
+        migrator.run(&self.conn).await?;
 
         log::info!("Running database migrations...");
+        Ok(())
     }
 }
 
