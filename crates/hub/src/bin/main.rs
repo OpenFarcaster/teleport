@@ -1,16 +1,18 @@
+use clap::Parser;
 use teleport_cli::{Cli, Commands};
 use teleport_hub::Hub;
-use clap::Parser;
+
+type HResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> HResult<()> {
     match Cli::parse().command {
         Commands::Start(_) => Hub::start().await,
-        Commands::Identity(_) => Ok(()),
-        Commands::Status(_) => Ok(()),
-        Commands::Profile(_) => Ok(()),
-        Commands::Reset(_) => Ok(()),
-        Commands::Console(_) => Ok(()),
+        Commands::Identity(_) => todo!(),
+        Commands::Status(_) => todo!(),
+        Commands::Profile(_) => todo!(),
+        Commands::Reset(_) => todo!(),
+        Commands::Console(_) => todo!(),
     };
 
     Ok(())

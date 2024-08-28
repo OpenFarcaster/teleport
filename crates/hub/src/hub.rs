@@ -7,7 +7,7 @@ use crate::{
 };
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use prost::Message;
-//use teleport_common::protobufs::generated::*;
+use teleport_common::protobufs::generated::*;
 use teleport_storage::Store;
 
 use ethers::{prelude::Provider, providers::Http};
@@ -120,7 +120,7 @@ impl Hub {
         todo!()
     }
 
-    pub async fn start() -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn start() {
         // Load env vars from .env file
 
         env_logger::init();
@@ -130,11 +130,11 @@ impl Hub {
         let provider = Arc::new(Provider::<Http>::try_from(&config.optimism_l2_rpc_url).unwrap());
 
         let store = Store::new(config.clone()).await;
-        store.migrate().await;
+        store.migrate().await.expect("failed to migrate files");
 
         let mut indexer = Indexer::new(config.clone(), store.clone(), provider)
             .await
-            .unwrap();
+            .expect("failed to load indexer");
 
         let keys = Key::new(config.clone());
 
@@ -192,7 +192,6 @@ impl Hub {
             .unwrap();
 
         subscribe_task.await.unwrap();
-        Ok(())
     }
 }
 
