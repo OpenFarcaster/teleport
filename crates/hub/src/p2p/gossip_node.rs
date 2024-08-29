@@ -102,7 +102,7 @@ impl NodeOptions {
     }
 }
 
-pub struct GossipNode {
+pub(crate) struct GossipNode {
     command_sender: mpsc::Sender<super::event_loop::Command>,
     event_loop: Option<EventLoop>,
 }
