@@ -1,0 +1,24 @@
+[package]
+authors = { workspace = true }
+description = "Crypto for Teleport"
+edition = { workspace = true }
+name = "teleport_crypto"
+homepage = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+blake3 = { workspace = true }
+libp2p = { workspace = true }
+prost = { workspace = true }
+tonic = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dotenv = { workspace = true }
+figment = { workspace = true }
+ed25519-dalek = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+

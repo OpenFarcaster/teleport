@@ -6,7 +6,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-authors = ["openfarcaster Hamza Hamud <self@hamzahamud.com>"]
+authors = ["openfarcaster", "Hamza Hamud <self@hamzahamud.com>"]
 name = "teleport"
 license = "MIT"
 version = "0.1.0"

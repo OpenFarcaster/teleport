@@ -1,8 +1,8 @@
 [package]
-authors = { workspace = true }
 description = "CLI for teleport"
-edition = { workspace = true }
 name = "teleport_cli"
+authors = { workspace = true }
+edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }

@@ -1,8 +1,8 @@
 [package]
+description = "protobuf for teleport"
+name = "teleport_protobuf"
 authors = { workspace = true }
-description = "Common lib for Teleport"
 edition = { workspace = true }
-name = "teleport_common"
 homepage = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
@@ -10,8 +10,6 @@ repository = { workspace = true }
 version = { workspace = true }
 
 [dependencies]
-blake3 = { workspace = true }
-thiserror = { workspace = true }
 libp2p = { workspace = true }
 prost = { workspace = true }
 tonic = { workspace = true }
@@ -19,9 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 dotenv = { workspace = true }
 figment = { workspace = true }
-ed25519-dalek = { workspace = true }
-hex = { workspace = true }
-rand = { workspace = true }
+
 
 [build-dependencies]
 prost-build = "0.11.9"
