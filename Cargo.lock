@@ -5519,6 +5519,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "teleport_crypto"
+version = "0.1.0"
+
+[[package]]
 name = "teleport_eth"
 version = "0.1.0"
 dependencies = [

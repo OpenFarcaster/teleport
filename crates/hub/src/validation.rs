@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use prost::Message;
-use teleport_common::errors::HubError;
+use crate::errors::HubError;
 use teleport_common::protobufs::generated;
 use teleport_common::{blake3, ed25519};
 

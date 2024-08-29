@@ -14,7 +14,6 @@ use libp2p::{
 };
 use prost::Message;
 use teleport_common::{
-    errors::{BadRequestType, HubError},
     protobufs::generated::{
         self,
         gossip_message::{self},
@@ -28,6 +27,8 @@ use super::{
     event_loop::{EventLoop, EventLoopState},
     gossip_behaviour::GossipBehaviour,
 };
+
+use crate::errors::{BadRequestType, HubError};
 
 const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
