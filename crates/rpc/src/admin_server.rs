@@ -1,4 +1,4 @@
-use teleport_common::protobufs::generated::{admin_service_server::AdminService, *};
+use teleport_protobuf::protobufs::generated::{admin_service_server::AdminService, *};
 use tonic::{Request, Response, Status};
 
 #[derive(Debug, Default)]

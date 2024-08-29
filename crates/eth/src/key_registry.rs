@@ -11,7 +11,7 @@ use serde_json::{self};
 use sqlx::Acquire;
 use std::error::Error;
 use std::sync::Arc;
-use teleport_common::protobufs::generated::{
+use teleport_protobuf::protobufs::generated::{
     on_chain_event, OnChainEvent, OnChainEventType, SignerEventBody, SignerEventType,
     SignerMigratedEventBody,
 };

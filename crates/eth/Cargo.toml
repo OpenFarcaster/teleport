@@ -10,13 +10,14 @@ repository = { workspace = true }
 version = { workspace = true }
 
 [dependencies]
-teleport_common = { path = "../common" }
+teleport_protobuf = { path = "../protobuf" }
+teleport_crypto = { path = "../crypto" }
+teleport_storage = { path = "../storage" }
 tonic = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 ethers = { workspace = true }
 serde_json = { workspace = true }
-teleport_storage = { path = "../storage" }
 sqlx = { workspace = true }
 uuid = { workspace = true }
 futures-util = { workspace = true }

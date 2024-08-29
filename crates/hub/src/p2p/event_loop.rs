@@ -14,7 +14,7 @@ use libp2p::swarm::SwarmEvent;
 use libp2p::{futures::channel::mpsc, Swarm};
 use libp2p::{Multiaddr, PeerId};
 use prost::Message;
-use teleport_common::protobufs::{self, generated};
+use teleport_protobuf::protobufs::{self, generated};
 use teleport_storage::Store;
 use tokio::time::{interval, Interval};
 use void::Void;

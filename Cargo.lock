@@ -5499,7 +5499,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "teleport_common"
+name = "teleport_crypto"
 version = "0.1.0"
 dependencies = [
  "blake3",
@@ -5509,18 +5509,12 @@ dependencies = [
  "hex",
  "libp2p",
  "prost",
- "prost-build",
  "rand",
  "serde",
  "serde_json",
  "thiserror",
  "tonic",
- "tonic-build",
 ]
-
-[[package]]
-name = "teleport_crypto"
-version = "0.1.0"
 
 [[package]]
 name = "teleport_eth"
@@ -5537,7 +5531,8 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
- "teleport_common",
+ "teleport_crypto",
+ "teleport_protobuf",
  "teleport_storage",
  "tokio",
  "tokio-stream",
@@ -5552,8 +5547,10 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
+ "dotenv",
  "env_logger",
  "ethers",
+ "figment",
  "hex",
  "libp2p",
  "libp2p-mplex",
@@ -5564,8 +5561,9 @@ dependencies = [
  "serde_json",
  "sqlx",
  "teleport_cli",
- "teleport_common",
+ "teleport_crypto",
  "teleport_eth",
+ "teleport_protobuf",
  "teleport_rpc",
  "teleport_storage",
  "thiserror",
@@ -5575,10 +5573,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "teleport_protobuf"
+version = "0.1.0"
+dependencies = [
+ "dotenv",
+ "figment",
+ "libp2p",
+ "prost",
+ "prost-build",
+ "serde",
+ "serde_json",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "teleport_rpc"
 version = "0.1.0"
 dependencies = [
- "teleport_common",
+ "teleport_protobuf",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -5595,7 +5608,7 @@ dependencies = [
  "prost",
  "serde_json",
  "sqlx",
- "teleport_common",
+ "teleport_protobuf",
  "tempfile",
  "tokio",
  "tonic",

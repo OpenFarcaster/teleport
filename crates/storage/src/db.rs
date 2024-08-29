@@ -2,8 +2,8 @@ use prost::Message;
 use sqlx::query::Query;
 use sqlx::sqlite::SqliteArguments;
 use sqlx::{Execute, Executor, QueryBuilder, Sqlite, Transaction};
-use teleport_common::protobufs::generated::on_chain_event::Body::*;
-use teleport_common::protobufs::generated::OnChainEvent;
+use teleport_protobuf::protobufs::generated::on_chain_event::Body::*;
+use teleport_protobuf::protobufs::generated::OnChainEvent;
 use uuid::Uuid;
 
 pub struct ChainEventRow {

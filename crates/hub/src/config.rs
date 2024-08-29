@@ -1,4 +1,3 @@
-
 use figment::{
     providers::{Env, Format, Toml},
     Figment,

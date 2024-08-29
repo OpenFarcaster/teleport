@@ -13,4 +13,4 @@ version = { workspace = true }
 tonic = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
-teleport_common = { path = "../common" }
+teleport_protobuf = { path = "../protobuf" }

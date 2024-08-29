@@ -2,7 +2,7 @@ use libp2p::identity::{
     ed25519::{self, SecretKey},
     Keypair, PublicKey,
 };
-use teleport_common::config::Config;
+use super::config::Config;
 
 pub struct Key {
     pub pubkey: PublicKey,

@@ -7,7 +7,7 @@ use crate::{
 };
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use prost::Message;
-use teleport_common::protobufs::generated::*;
+use teleport_protobuf::protobufs::generated::*;
 use teleport_storage::Store;
 
 use ethers::{prelude::Provider, providers::Http};
@@ -18,10 +18,8 @@ use std::process::exit;
 use std::str::FromStr;
 use std::sync::Arc;
 use teleport_cli;
-use teleport_common::config::Config;
-use teleport_common::peer_id::{create_ed25519_peer_id, write_peer_id};
-use teleport_common::protobufs::generated::hub_service_server::HubServiceServer;
-use teleport_common::protobufs::generated::{FarcasterNetwork, PeerIdProto};
+use super::config::Config;
+use teleport_protobuf::{peer_id::{create_ed25519_peer_id, write_peer_id}, protobufs::generated::{hub_service_server::HubServiceServer, FarcasterNetwork, PeerIdProto}};
 use teleport_eth::indexer::Indexer;
 use teleport_rpc::server::HubServer;
 use tonic::transport::Server;
@@ -159,7 +157,7 @@ impl Hub {
             .collect();
 
         let node_options =
-            NodeOptions::new(teleport_common::protobufs::generated::FarcasterNetwork::Mainnet)
+            NodeOptions::new(teleport_protobuf::protobufs::generated::FarcasterNetwork::Mainnet)
                 .with_keypair(keys.id)
                 .with_bootstrap_addrs(bootstrap_nodes);
 

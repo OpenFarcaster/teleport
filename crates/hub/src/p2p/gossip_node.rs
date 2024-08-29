@@ -13,7 +13,7 @@ use libp2p::{
     Multiaddr, PeerId, Swarm, Transport,
 };
 use prost::Message;
-use teleport_common::{
+use teleport_protobuf::{
     protobufs::generated::{
         self,
         gossip_message::{self},

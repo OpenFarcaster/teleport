@@ -10,7 +10,7 @@ repository = { workspace = true }
 version = { workspace = true }
 
 [dependencies]
-teleport_common = { path = "../common" }
+teleport_protobuf = { path = "../protobuf" }
 prost = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
