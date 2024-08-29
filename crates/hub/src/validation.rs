@@ -1,8 +1,8 @@
+use crate::errors::HubError;
 use chrono::{DateTime, Utc};
 use prost::Message;
-use crate::errors::HubError;
-use teleport_protobuf::protobufs::generated;
 use teleport_crypto::{blake3, ed25519};
+use teleport_protobuf::protobufs::generated;
 
 pub struct Validator<'a> {
     message: &'a generated::Message,

@@ -12,6 +12,7 @@ version = { workspace = true }
 [dependencies]
 teleport_protobuf = { path = "../protobuf" }
 teleport_crypto = { path = "../crypto" }
+teleport_config = { path = "../config" }
 teleport_storage = { path = "../storage" }
 tonic = { workspace = true }
 tokio = { workspace = true }

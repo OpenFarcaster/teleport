@@ -2,7 +2,7 @@ use libp2p::identity::{
     ed25519::{self, SecretKey},
     Keypair, PublicKey,
 };
-use super::config::Config;
+use teleport_config::Config;
 
 pub struct Key {
     pub pubkey: PublicKey,
@@ -29,6 +29,5 @@ impl Key {
         }
     }
 }
-
 
 //Key::from_mnemonic()

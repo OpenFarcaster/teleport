@@ -18,9 +18,12 @@ use std::process::exit;
 use std::str::FromStr;
 use std::sync::Arc;
 use teleport_cli;
-use super::config::Config;
-use teleport_protobuf::{peer_id::{create_ed25519_peer_id, write_peer_id}, protobufs::generated::{hub_service_server::HubServiceServer, FarcasterNetwork, PeerIdProto}};
+use teleport_config::Config;
 use teleport_eth::indexer::Indexer;
+use teleport_protobuf::{
+    peer_id::{create_ed25519_peer_id, write_peer_id},
+    protobufs::generated::{hub_service_server::HubServiceServer, FarcasterNetwork, PeerIdProto},
+};
 use teleport_rpc::server::HubServer;
 use tonic::transport::Server;
 

@@ -5499,6 +5499,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "teleport_config"
+version = "0.1.0"
+dependencies = [
+ "dotenv",
+ "figment",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "teleport_crypto"
 version = "0.1.0"
 dependencies = [
@@ -5531,6 +5541,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "teleport_config",
  "teleport_crypto",
  "teleport_protobuf",
  "teleport_storage",
@@ -5547,10 +5558,8 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
- "dotenv",
  "env_logger",
  "ethers",
- "figment",
  "hex",
  "libp2p",
  "libp2p-mplex",
@@ -5561,6 +5570,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "teleport_cli",
+ "teleport_config",
  "teleport_crypto",
  "teleport_eth",
  "teleport_protobuf",
@@ -5608,6 +5618,7 @@ dependencies = [
  "prost",
  "serde_json",
  "sqlx",
+ "teleport_config",
  "teleport_protobuf",
  "tempfile",
  "tokio",

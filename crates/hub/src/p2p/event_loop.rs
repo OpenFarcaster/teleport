@@ -2,9 +2,9 @@ use crate::validation::Validator;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::errors::{BadRequestType, HubError, UnavailableType};
-use super::time::get_farcaster_time;
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
+use super::time::get_farcaster_time;
+use crate::errors::{BadRequestType, HubError, UnavailableType};
 use libp2p::futures::channel::oneshot;
 use libp2p::futures::StreamExt;
 use libp2p::gossipsub;

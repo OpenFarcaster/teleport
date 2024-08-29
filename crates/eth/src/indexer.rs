@@ -10,6 +10,7 @@ use ethers::{
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
+use teleport_config::Config;
 use teleport_storage::{db, Store};
 use tokio;
 

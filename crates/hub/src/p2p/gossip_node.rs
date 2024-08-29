@@ -13,12 +13,10 @@ use libp2p::{
     Multiaddr, PeerId, Swarm, Transport,
 };
 use prost::Message;
-use teleport_protobuf::{
-    protobufs::generated::{
-        self,
-        gossip_message::{self},
-        ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
-    },
+use teleport_protobuf::protobufs::generated::{
+    self,
+    gossip_message::{self},
+    ContactInfoContent, FarcasterNetwork, GossipMessage, GossipVersion,
 };
 use teleport_storage::Store;
 use tokio::spawn;

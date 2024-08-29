@@ -11,6 +11,7 @@ version = { workspace = true }
 
 [dependencies]
 teleport_crypto = { path = "../crypto" }
+teleport_config = { path = "../config" }
 teleport_protobuf = { path = "../protobuf" }
 teleport_rpc = { path = "../rpc" }
 teleport_cli = { path = "../cli" }
@@ -33,5 +34,3 @@ once_cell = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 clap = { workspace = true }
-dotenv = { workspace = true }
-figment = { workspace = true }
