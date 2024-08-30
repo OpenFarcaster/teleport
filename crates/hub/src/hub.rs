@@ -1,13 +1,11 @@
-use crate::{
-    key::Key,
-};
+use crate::key::Key;
 
-use teleport_p2p::{
-        event_loop::Command,
-        gossip_node::{GossipNode, NodeOptions},
-    };
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use prost::Message;
+use teleport_p2p::{
+    event_loop::Command,
+    gossip_node::{AddrInfo, GossipNode, NodeOptions},
+};
 use teleport_protobuf::protobufs::generated::*;
 use teleport_storage::Store;
 
@@ -44,12 +42,6 @@ enum HubSubmitSource {
 pub struct TestUser {
     fid: u64,
     mnemonic: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct AddrInfo {
-    pub id: PeerId,
-    pub addrs: Vec<Multiaddr>,
 }
 
 #[derive(Debug, Clone)]

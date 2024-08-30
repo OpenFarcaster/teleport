@@ -1,4 +1,4 @@
-use crate::errors::HubError;
+use crate::errors::P2pError;
 use chrono::{DateTime, Utc};
 use prost::Message;
 use teleport_crypto::{blake3, ed25519};
@@ -13,7 +13,7 @@ impl<'a> Validator<'a> {
         Self { message }
     }
 
-    fn validate_msg_body(&self) -> Result<(), HubError> {
+    fn validate_msg_body(&self) -> Result<(), P2pError> {
         let msg_data = self.message.data.as_ref().unwrap();
         let body = msg_data.body.as_ref().unwrap();
         match body {
@@ -48,10 +48,10 @@ impl<'a> Validator<'a> {
         Ok(())
     }
 
-    fn validate_signature(&self) -> Result<(), HubError> {
+    fn validate_signature(&self) -> Result<(), P2pError> {
         let signature_scheme = generated::SignatureScheme::from_i32(self.message.signature_scheme)
             .ok_or_else(|| {
-                HubError::Unknown(format!(
+                P2pError::Unknown(format!(
                     "Unknown signature scheme: {:?}",
                     self.message.signature_scheme
                 ))
@@ -76,12 +76,12 @@ impl<'a> Validator<'a> {
                         return Ok(());
                     }
                     Err(err) => {
-                        return Err(HubError::Unknown(err.to_string()));
+                        return Err(P2pError::Unknown(err.to_string()));
                     }
                 }
             }
             _ => {
-                return Err(HubError::Unknown(format!(
+                return Err(P2pError::Unknown(format!(
                     "Unknown signature scheme: {:?}",
                     self.message.signature_scheme
                 )));
@@ -89,9 +89,9 @@ impl<'a> Validator<'a> {
         }
     }
 
-    fn validate_hash(&self) -> Result<(), HubError> {
+    fn validate_hash(&self) -> Result<(), P2pError> {
         if self.message.hash_scheme != generated::HashScheme::Blake3 as i32 {
-            return Err(HubError::Unknown(format!(
+            return Err(P2pError::Unknown(format!(
                 "Unknown hash scheme: {:?}",
                 self.message.hash_scheme
             )));
@@ -107,7 +107,7 @@ impl<'a> Validator<'a> {
         }
 
         if self.message.hash != msg_hash {
-            return Err(HubError::Unknown(format!(
+            return Err(P2pError::Unknown(format!(
                 "Invalid message hash: {:?}",
                 self.message.hash
             )));
@@ -116,7 +116,7 @@ impl<'a> Validator<'a> {
         Ok(())
     }
 
-    pub fn validate(&self) -> Result<(), HubError> {
+    pub fn validate(&self) -> Result<(), P2pError> {
         self.validate_hash()?;
         // todo: check if the signer belongs to the user?
         self.validate_signature()?;
@@ -125,11 +125,11 @@ impl<'a> Validator<'a> {
         Ok(())
     }
 
-    fn validate_timestamp(&self) -> Result<(), HubError> {
+    fn validate_timestamp(&self) -> Result<(), P2pError> {
         let timestamp = self.message.data.as_ref().unwrap().timestamp as i64;
         let msg_datetime = DateTime::from_timestamp(timestamp, 0).unwrap();
         if (msg_datetime - Utc::now()).num_seconds() > 600 {
-            return Err(HubError::Unknown(format!(
+            return Err(P2pError::Unknown(format!(
                 "Invalid timestamp: {:?}",
                 msg_datetime
             )));

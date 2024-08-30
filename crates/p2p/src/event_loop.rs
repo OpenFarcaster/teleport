@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::gossip_behaviour::{GossipBehaviour, GossipBehaviourEvent};
 use super::time::get_farcaster_time;
-use crate::errors::{BadRequestType, HubError, UnavailableType};
+use crate::errors::{BadRequestType, P2pError, UnavailableType};
 use libp2p::futures::channel::oneshot;
 use libp2p::futures::StreamExt;
 use libp2p::gossipsub;
@@ -442,7 +442,7 @@ impl EventLoop {
             .publish(topic, encoded_peer);
     }
 
-    fn gossip_message(&mut self, message: generated::Message) -> Result<(), HubError> {
+    fn gossip_message(&mut self, message: generated::Message) -> Result<(), P2pError> {
         let gossip_message = generated::GossipMessage {
             topics: vec![self.state.primary_topic.to_string()],
             peer_id: self.swarm.local_peer_id().to_bytes(),
@@ -457,7 +457,7 @@ impl EventLoop {
     fn gossip_contact_info(
         &mut self,
         contact_info: generated::ContactInfoContent,
-    ) -> Result<(), HubError> {
+    ) -> Result<(), P2pError> {
         let gossip_message = generated::GossipMessage {
             topics: vec![self.state.contact_info_topic.to_string()],
             peer_id: self.swarm.local_peer_id().to_bytes(),
@@ -471,7 +471,7 @@ impl EventLoop {
         self.publish(gossip_message)
     }
 
-    fn publish(&mut self, message: generated::GossipMessage) -> Result<(), HubError> {
+    fn publish(&mut self, message: generated::GossipMessage) -> Result<(), P2pError> {
         let encode_result = message.encode_to_vec();
 
         for topic_str in message.topics {
@@ -483,7 +483,7 @@ impl EventLoop {
                 .publish(topic, encode_result.clone());
 
             if let Err(err) = publish_result {
-                return Err(HubError::BadRequest(
+                return Err(P2pError::BadRequest(
                     BadRequestType::Duplicate,
                     err.to_string(),
                 ));
@@ -493,13 +493,13 @@ impl EventLoop {
         Ok(())
     }
 
-    fn dial_multi_addr(&mut self, multi_addr: Multiaddr) -> Result<(), HubError> {
+    fn dial_multi_addr(&mut self, multi_addr: Multiaddr) -> Result<(), P2pError> {
         println!("dialing {:?}", multi_addr);
         let res = self.swarm.dial(multi_addr);
 
         match res {
             Ok(_) => Ok(()),
-            Err(err) => Err(HubError::Unavailable(
+            Err(err) => Err(P2pError::Unavailable(
                 UnavailableType::Generic,
                 err.to_string(),
             )),

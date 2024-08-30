@@ -7,6 +7,7 @@ use ethers::{
 use sqlx::Acquire;
 use std::error::Error;
 use std::sync::Arc;
+use teleport_config::Config;
 use teleport_protobuf::protobufs::generated::{
     on_chain_event, IdRegisterEventBody, IdRegisterEventType, OnChainEvent, OnChainEventType,
 };

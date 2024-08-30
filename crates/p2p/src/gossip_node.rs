@@ -1,6 +1,5 @@
 use std::{net::TcpListener, str::FromStr};
 
-use crate::hub::AddrInfo;
 use libp2p::{
     core::upgrade,
     futures::{
@@ -26,10 +25,16 @@ use super::{
     gossip_behaviour::GossipBehaviour,
 };
 
-use crate::errors::{BadRequestType, HubError};
+use crate::errors::{BadRequestType, P2pError};
 
 const MULTI_ADDR_LOCAL_HOST: &str = "/ip4/127.0.0.1";
 const MAX_MESSAGE_QUEUE_SIZE: usize = 100_000;
+
+#[derive(Debug, Clone)]
+pub struct AddrInfo {
+    pub id: PeerId,
+    pub addrs: Vec<Multiaddr>,
+}
 
 #[derive(Message)]
 pub struct Peer {
@@ -101,7 +106,7 @@ impl NodeOptions {
     }
 }
 
-pub(crate) struct GossipNode {
+pub struct GossipNode {
     command_sender: mpsc::Sender<super::event_loop::Command>,
     event_loop: Option<EventLoop>,
 }
@@ -121,7 +126,7 @@ impl GossipNode {
         }
     }
 
-    pub async fn start(&mut self) -> Result<(), HubError> {
+    pub async fn start(&mut self) -> Result<(), P2pError> {
         let listen_ip_multi_addr = MULTI_ADDR_LOCAL_HOST.to_string();
         let listen_port = {
             let tcp_listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -154,7 +159,7 @@ impl GossipNode {
         Ok(())
     }
 
-    pub fn gossip_message(&mut self, message: generated::Message) -> Result<(), HubError> {
+    pub fn gossip_message(&mut self, message: generated::Message) -> Result<(), P2pError> {
         self.command_sender
             .start_send(super::event_loop::Command::GossipMessage { message })
             .expect("Failed to send GossipMessage command");
@@ -164,14 +169,14 @@ impl GossipNode {
     pub fn gossip_contact_info(
         &mut self,
         contact_info: ContactInfoContent,
-    ) -> Result<(), HubError> {
+    ) -> Result<(), P2pError> {
         self.command_sender
             .start_send(super::event_loop::Command::GossipContactInfo { contact_info })
             .expect("Failed to send GossipContactInfo command");
         Ok(())
     }
 
-    pub async fn get_state(&mut self) -> Result<EventLoopState, HubError> {
+    pub async fn get_state(&mut self) -> Result<EventLoopState, P2pError> {
         let (sender, receiver) = oneshot::channel::<EventLoopState>();
         self.command_sender
             .start_send(super::event_loop::Command::GetState { sender })
@@ -181,23 +186,23 @@ impl GossipNode {
     }
 }
 
-pub fn decode_message(message: &[u8]) -> Result<GossipMessage, HubError> {
+pub fn decode_message(message: &[u8]) -> Result<GossipMessage, P2pError> {
     let gossip_message = GossipMessage::decode(message)
         .map_err(|_| {
-            HubError::BadRequest(BadRequestType::ParseFailure, "Invalid failure".to_owned())
+            P2pError::BadRequest(BadRequestType::ParseFailure, "Invalid failure".to_owned())
         })
         .unwrap();
 
     let supported_versions = vec![GossipVersion::V1, GossipVersion::V11];
     if gossip_message.topics.len() == 0 || !supported_versions.contains(&gossip_message.version()) {
-        return Err(HubError::BadRequest(
+        return Err(P2pError::BadRequest(
             BadRequestType::ParseFailure,
             "Invalid failure".to_owned(),
         ));
     }
 
     PeerId::from_bytes(&gossip_message.peer_id).map_err(|_| {
-        HubError::BadRequest(BadRequestType::ParseFailure, "Invalid failure".to_owned())
+        P2pError::BadRequest(BadRequestType::ParseFailure, "Invalid failure".to_owned())
     })?;
 
     Ok(gossip_message)
@@ -241,7 +246,7 @@ pub fn default_message_id_fn(message: &GossipSubMessage) -> MessageId {
     MessageId::from(source_string)
 }
 
-fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, HubError> {
+fn create_node(options: NodeOptions) -> Result<Swarm<GossipBehaviour>, P2pError> {
     let local_key = options
         .keypair
         .unwrap_or(identity::Keypair::generate_ed25519());

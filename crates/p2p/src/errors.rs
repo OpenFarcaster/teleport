@@ -19,7 +19,7 @@ pub enum UnavailableType {
 }
 
 #[derive(Error, Debug)]
-pub enum HubError {
+pub enum P2pError {
     #[error("the request did not have valid authentication credentials {0:#?}")]
     Unauthenticated(String),
     #[error("the authenticated request did not have the authority to perform this action {0:#?}")]

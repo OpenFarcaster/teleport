@@ -5573,6 +5573,7 @@ dependencies = [
  "teleport_config",
  "teleport_crypto",
  "teleport_eth",
+ "teleport_p2p",
  "teleport_protobuf",
  "teleport_rpc",
  "teleport_storage",

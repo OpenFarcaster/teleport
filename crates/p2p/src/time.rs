@@ -1,8 +1,8 @@
-use crate::errors::*;
+use crate::errors::{BadRequestType, P2pError};
 
 const FARCASTER_EPOCH: i64 = 1609459200000;
 
-pub fn get_farcaster_time() -> Result<u32, HubError> {
+pub fn get_farcaster_time() -> Result<u32, P2pError> {
     to_farcaster_time(
         (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -13,17 +13,17 @@ pub fn get_farcaster_time() -> Result<u32, HubError> {
     )
 }
 
-pub fn to_farcaster_time(time: i64) -> Result<u32, HubError> {
+pub fn to_farcaster_time(time: i64) -> Result<u32, P2pError> {
     println!("to_farcaster_time: {}", time);
     if time < FARCASTER_EPOCH {
-        return Err(HubError::BadRequest(
+        return Err(P2pError::BadRequest(
             BadRequestType::InvalidParam,
             "time must be after Farcaster epoch (01/01/2021".to_string(),
         ));
     }
     let seconds_since_epoch = (time - FARCASTER_EPOCH) / 1000;
     if seconds_since_epoch > 2i64.pow(32) - 1 {
-        return Err(HubError::BadRequest(
+        return Err(P2pError::BadRequest(
             BadRequestType::InvalidParam,
             "time too far in future".to_string(),
         ));
@@ -32,6 +32,6 @@ pub fn to_farcaster_time(time: i64) -> Result<u32, HubError> {
     Ok(seconds_since_epoch.try_into().unwrap())
 }
 
-pub fn from_farcaster_time(time: u32) -> Result<i64, HubError> {
+pub fn from_farcaster_time(time: u32) -> Result<i64, P2pError> {
     Ok(time as i64 * 1000 + FARCASTER_EPOCH)
 }
