@@ -1,10 +1,11 @@
 use crate::{
     key::Key,
-    p2p::{
+};
+
+use teleport_p2p::{
         event_loop::Command,
         gossip_node::{GossipNode, NodeOptions},
-    },
-};
+    };
 use libp2p::{futures::channel::mpsc, Multiaddr, PeerId};
 use prost::Message;
 use teleport_protobuf::protobufs::generated::*;

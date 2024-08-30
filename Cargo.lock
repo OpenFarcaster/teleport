@@ -5583,6 +5583,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "teleport_p2p"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "env_logger",
+ "ethers",
+ "hex",
+ "libp2p",
+ "libp2p-mplex",
+ "log",
+ "once_cell",
+ "prost",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "teleport_cli",
+ "teleport_config",
+ "teleport_crypto",
+ "teleport_eth",
+ "teleport_protobuf",
+ "teleport_rpc",
+ "teleport_storage",
+ "thiserror",
+ "tokio",
+ "tonic",
+ "void",
+]
+
+[[package]]
 name = "teleport_protobuf"
 version = "0.1.0"
 dependencies = [

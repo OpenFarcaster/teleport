@@ -1,17 +1,16 @@
 [package]
-authors = { workspace = true }
-description = "teleport hub"
-edition = { workspace = true }
-name = "teleport_hub"
-homepage = { workspace = true }
-license = { workspace = true }
-readme = { workspace = true }
-repository = { workspace = true }
-version = { workspace = true }
+authors.workspace = true
+name = "teleport_p2p"
+description = "peer-to-peer crate for teleport"
+license.workspace = true
+version.workspace = true
+edition.workspace = true
+readme.workspace = true
+homepage.workspace = true
+repository.workspace = true
 
 [dependencies]
 teleport_crypto = { path = "../crypto" }
-teleport_p2p = { path = "../p2p" }
 teleport_config = { path = "../config" }
 teleport_protobuf = { path = "../protobuf" }
 teleport_rpc = { path = "../rpc" }
