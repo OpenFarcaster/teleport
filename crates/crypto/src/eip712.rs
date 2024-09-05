@@ -15,7 +15,6 @@ where
     version = "2.0.0",
     salt = "0xf2d857f4a3edcb9b78b4d503bfe733db1e3f6cdc2b7971ee739626c97e86a558"
 )]
-
 #[allow(non_snake_case)]
 pub struct EIP712VerificationClaim {
     pub fid: U256,
@@ -30,7 +29,6 @@ pub struct EIP712VerificationClaim {
     version = "2.0.0",
     salt = "0xf2d857f4a3edcb9b78b4d503bfe733db1e3f6cdc2b7971ee739626c97e86a558"
 )]
-
 pub struct EIP712MessageData {
     pub hash: Bytes,
 }
@@ -42,7 +40,6 @@ pub struct EIP712MessageData {
     chain_id = 1,
     verifying_contract = "0xe3be01d99baa8db9905b33a3ca391238234b79d1"
 )]
-
 pub struct EIP712UsernameProof {
     pub name: String,
     #[serde(deserialize_with = "deserialize_u256_from_i64")]

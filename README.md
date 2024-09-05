@@ -87,6 +87,3 @@ Make sure to run the following command before pushing commits as this will run a
 ``` bash
 make verify
 ```
-
-
-

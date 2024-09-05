@@ -35,3 +35,4 @@ once_cell = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 clap = { workspace = true }
+anyhow = "1.0.86"
