@@ -1,0 +1,28 @@
+[package]
+description = "protobuf for teleport"
+name = "teleport_protobuf"
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+libp2p = { workspace = true }
+prost = { workspace = true }
+tonic = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+dotenv = { workspace = true }
+figment = { workspace = true }
+
+
+[build-dependencies]
+prost-build = "0.11.9"
+tonic-build = "0.9.2"
+
+
+[patch.crates-io]
+prost = { git = 'https://github.com/OpenFarcaster/prost.git' }

@@ -1,0 +1,38 @@
+[package]
+authors = { workspace = true }
+description = "teleport hub"
+edition = { workspace = true }
+name = "teleport_hub"
+homepage = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+teleport_crypto = { path = "../crypto" }
+teleport_p2p = { path = "../p2p" }
+teleport_config = { path = "../config" }
+teleport_protobuf = { path = "../protobuf" }
+teleport_rpc = { path = "../rpc" }
+teleport_cli = { path = "../cli" }
+teleport_storage = { path = "../storage" }
+teleport_eth = { path = "../eth" }
+libp2p = { workspace = true }
+prost = { workspace = true }
+tokio = { workspace = true }
+void = { workspace = true }
+libp2p-mplex = { workspace = true }
+tonic = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+hex = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+ethers = { workspace = true }
+thiserror = { workspace = true }
+once_cell = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+clap = { workspace = true }
+anyhow = "1.0.86"

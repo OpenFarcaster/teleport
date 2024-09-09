@@ -1,0 +1,35 @@
+[package]
+authors = { workspace = true }
+description = "ETH event indexing for Teleport"
+edition = { workspace = true }
+name = "teleport_eth"
+homepage = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+repository = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+teleport_protobuf = { path = "../protobuf" }
+teleport_crypto = { path = "../crypto" }
+teleport_config = { path = "../config" }
+teleport_storage = { path = "../storage" }
+tonic = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+ethers = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+futures-util = { workspace = true }
+serde = { workspace = true }
+prost = { workspace = true }
+hex = { workspace = true }
+alloy-dyn-abi = { workspace = true }
+alloy-primitives = { workspace = true }
+log = { workspace = true }
+futures = { workspace = true }
+url = "2.5.2"
+
+[build-dependencies]
+ethers = { workspace = true }

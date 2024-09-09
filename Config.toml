@@ -1,11 +1,11 @@
 db_path = "sqlite:./farcaster.db"
-db_migrations_path = "./lib/storage/migrations"
+db_migrations_path = "./crates/storage/migrations"
 farcaster_priv_key = ""
 optimism_l2_rpc_url = "https://mainnet.optimism.io"
 chain_id = 10
 id_registry_address = "0x00000000Fc6c5F01Fc30151999387Bb99A9f489b"
 key_registry_address = "0x00000000Fc1237824fb747aBDE0FF18990E59b7e"
 storage_registry_address = "0x00000000fcce7f938e7ae6d3c335bd6a1a7c593d"
-abi_dir = "./lib/eth/abis"
+abi_dir = "./crates/eth/abis"
 indexer_interval = 60                                                   # This value is in seconds
 bootstrap_addrs = ["/ip4/107.21.22.118/tcp/2282"]
